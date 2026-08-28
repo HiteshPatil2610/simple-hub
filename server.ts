@@ -840,16 +840,18 @@ app.post('/api/track/click', trackLimiter, (req, res) => {
 
 // RECORD CONVERSION (Simulation / affiliate callback)
 app.post('/api/analytics/conversion', requireOwnerAuth, (req, res) => {
-  const { productId, orderValue, commissionEarned, clickId } = req.body;
+  const { productId, clickId } = req.body;
   const product = products.find(p => p.id === productId);
 
   if (!product) {
     return sendError(res, 404, 'Product not found');
   }
 
-  const val = parseFloat(orderValue) || product.price;
+  // This is a local simulation endpoint, so financial values come only from
+  // the server-side catalog rather than client-controlled request fields.
+  const val = product.price;
   const commRate = (product.commissionRate || 6) / 100;
-  const comm = commissionEarned !== undefined ? parseFloat(commissionEarned) : val * commRate;
+  const comm = val * commRate;
 
   const convEvent: ConversionEvent = {
     id: `conv-${Date.now()}`,
