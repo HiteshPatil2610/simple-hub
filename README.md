@@ -13,11 +13,11 @@ Raccoon Hub lets content creators, curators, and niche site owners share hand-pi
 
 ## ✨ Features
 
-- **Curated storefront** — a responsive card grid with real-time search, category filters, and a mobile bottom-dock nav. Every card shows exactly what matters: image, title, description, category, and a "View on Amazon" button.
+- **Curated storefront** — a responsive card grid with real-time search, category filters, and a mobile bottom-dock nav. Products are entered by the owner and displayed with image, title, description, category, and a "View on Amazon" button.
 - **Direct Amazon affiliate links** — paste any `amazon.com/dp/...` link or `amzn.to/...` short link; affiliate tags and UTM parameters are applied automatically.
 - **Server-side redirect & telemetry** — every outbound click routes through a tracking endpoint that logs timestamp, device type, referrer, and UTM data *before* forwarding the visitor, with no client-side delay.
 - **Owner Control Hub** — a passcode-gated admin panel to add/edit/delete products, upload images straight from your device, and review analytics.
-- **Real analytics** — total clicks, real (hashed, anonymous) unique visitors, a 14-day trend graph, a product leaderboard, a searchable click stream, and CSV export.
+- **Live analytics** — total clicks, real (hashed, anonymous) unique visitors, a 14-day trend graph, a product leaderboard, a searchable click stream, and CSV export. New deployments start empty and populate only from real activity.
 - **Secured by default** — every mutating admin route requires a passcode, uploads are type/size validated, and click endpoints are rate-limited.
 
 ---

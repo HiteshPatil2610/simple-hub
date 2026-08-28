@@ -116,225 +116,7 @@ const PRODUCTS_FILE = path.join(DATA_DIR, 'products.json');
 const CLICKS_FILE = path.join(DATA_DIR, 'clicks.json');
 const CONVERSIONS_FILE = path.join(DATA_DIR, 'conversions.json');
 
-// Initial seed products inspired by sillycorns.shop
-const INITIAL_PRODUCTS: Product[] = [
-  {
-    id: 'prod-1',
-    title: 'Floating Cloud Magnetic Levitating Lamp with RGB Glow',
-    description: 'A mesmerizing desk centerpiece that floats in mid-air using magnetic levitation. Features warm glow and soothing color shifts with gentle tap controls.',
-    category: 'Desk & Tech',
-    price: 49.99,
-    originalPrice: 79.99,
-    rating: 4.9,
-    reviewCount: 3840,
-    imageUrl: 'https://images.unsplash.com/photo-1517991104123-1d56a6e81ed9?w=800&auto=format&fit=crop&q=80',
-    platform: 'Amazon',
-    affiliateUrl: 'https://www.amazon.com/dp/B08XYZ1234',
-    affiliateTag: 'sillycorns-20',
-    badge: 'TikTok Viral 🔥',
-    featured: true,
-    commissionRate: 8,
-    createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-  },
-  {
-    id: 'prod-2',
-    title: 'Capybara Soft Silicone Touch Tap Night Light',
-    description: 'Squishable, soothing, and ultra-chill capybara LED light with 2 brightness levels and automatic 20-minute sleep timer. The internet’s favorite animal for your bedside.',
-    category: 'Cute & Whimsical',
-    price: 19.99,
-    originalPrice: 28.50,
-    rating: 4.9,
-    reviewCount: 5120,
-    imageUrl: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=800&auto=format&fit=crop&q=80',
-    platform: 'TikTok Shop',
-    affiliateUrl: 'https://www.tiktok.com/view/product/capybara-lamp',
-    affiliateTag: 'tiktok-creator-finds',
-    badge: 'Best Seller 🏆',
-    featured: true,
-    commissionRate: 12,
-    createdAt: new Date(Date.now() - 25 * 86400000).toISOString(),
-  },
-  {
-    id: 'prod-3',
-    title: 'Astronaut Galaxy Star Nebula Projector with Remote',
-    description: 'Transforms your room into an infinite starry cosmos with 8 nebula color modes, adjustable 360° magnetic astronaut head, and timer control.',
-    category: 'Quirky Home Decor',
-    price: 29.95,
-    originalPrice: 45.00,
-    rating: 4.8,
-    reviewCount: 8940,
-    imageUrl: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=800&auto=format&fit=crop&q=80',
-    platform: 'Amazon',
-    affiliateUrl: 'https://www.amazon.com/dp/B09ASTR001',
-    affiliateTag: 'sillycorns-20',
-    badge: '50k+ Sold ✨',
-    featured: true,
-    commissionRate: 6,
-    createdAt: new Date(Date.now() - 22 * 86400000).toISOString(),
-  },
-  {
-    id: 'prod-4',
-    title: 'Giant Clicky Mechanical Key Switch Fidget Keychain',
-    description: 'Satisfying jumbo blue clicky tactile switch with dynamic RGB backlight. Instant stress relief for keyboard geeks and fidgeters during long work meetings.',
-    category: 'Desk Toys & Fidgets',
-    price: 12.99,
-    originalPrice: 16.99,
-    rating: 4.7,
-    reviewCount: 1420,
-    imageUrl: 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&auto=format&fit=crop&q=80',
-    platform: 'AliExpress',
-    affiliateUrl: 'https://www.aliexpress.com/item/10050098234.html',
-    affiliateTag: 'silly_ali_partner',
-    badge: 'Under $15 💡',
-    featured: false,
-    commissionRate: 10,
-    createdAt: new Date(Date.now() - 18 * 86400000).toISOString(),
-  },
-  {
-    id: 'prod-5',
-    title: 'Self-Stirring Automatic Magnetic Stainless Mug',
-    description: 'Never hunt for a spoon again. Spins at 7000 RPM with a magnetic capsule pill to effortlessly mix protein shakes, matcha, hot cocoa, and bulletproof coffee.',
-    category: 'Cool Tech Gadgets',
-    price: 22.50,
-    originalPrice: 32.00,
-    rating: 4.6,
-    reviewCount: 2890,
-    imageUrl: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=800&auto=format&fit=crop&q=80',
-    platform: 'Amazon',
-    affiliateUrl: 'https://www.amazon.com/dp/B07SELFSTIR',
-    affiliateTag: 'sillycorns-20',
-    badge: 'Viral TikTok 🔥',
-    featured: true,
-    commissionRate: 7,
-    createdAt: new Date(Date.now() - 15 * 86400000).toISOString(),
-  },
-  {
-    id: 'prod-6',
-    title: 'Spaghetti Monster Quirky Kitchen Colander & Strainer',
-    description: 'The iconic culinary monster with googly eye handles. Heat-resistant BPA-free food strainer that brings pure joy and smiles to everyday pasta nights.',
-    category: 'Quirky Home Decor',
-    price: 16.99,
-    originalPrice: 24.99,
-    rating: 4.9,
-    reviewCount: 4230,
-    imageUrl: 'https://images.unsplash.com/photo-1551183053-bf91a1d81141?w=800&auto=format&fit=crop&q=80',
-    platform: 'Etsy',
-    affiliateUrl: 'https://www.etsy.com/listing/spaghetti-monster-colander',
-    affiliateTag: 'etsy_curator_id',
-    badge: 'Staff Pick 🌟',
-    featured: false,
-    commissionRate: 5,
-    createdAt: new Date(Date.now() - 12 * 86400000).toISOString(),
-  },
-  {
-    id: 'prod-7',
-    title: 'Pocket Mini Thermal Inkless Photo & Sticker Printer',
-    description: 'Zero ink required! Connects via Bluetooth to print instant cute stickers, to-do checklists, study notes, labels, and vintage black-and-white photos on the go.',
-    category: 'Cool Tech Gadgets',
-    price: 34.99,
-    originalPrice: 49.99,
-    rating: 4.8,
-    reviewCount: 6190,
-    imageUrl: 'https://images.unsplash.com/photo-1612815154858-60aa4c59eaa6?w=800&auto=format&fit=crop&q=80',
-    platform: 'TikTok Shop',
-    affiliateUrl: 'https://www.tiktok.com/view/product/thermal-printer',
-    affiliateTag: 'tiktok-creator-finds',
-    badge: 'Trending Now 🚀',
-    featured: true,
-    commissionRate: 14,
-    createdAt: new Date(Date.now() - 10 * 86400000).toISOString(),
-  },
-  {
-    id: 'prod-8',
-    title: 'Tiny Hands Finger Puppets (Pack of 10 for Pets & Pranks)',
-    description: 'The undisputed king of meme videos. Miniature hands that slip onto your fingers for hilarious pet videos, high-fives, and TikTok comedy sketches.',
-    category: 'Gifts & Novelties',
-    price: 9.99,
-    originalPrice: 14.99,
-    rating: 4.9,
-    reviewCount: 12400,
-    imageUrl: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?w=800&auto=format&fit=crop&q=80',
-    platform: 'Amazon',
-    affiliateUrl: 'https://www.amazon.com/dp/B07TINYHANDS',
-    affiliateTag: 'sillycorns-20',
-    badge: 'Meme Legend 😂',
-    featured: false,
-    commissionRate: 5,
-    createdAt: new Date(Date.now() - 8 * 86400000).toISOString(),
-  },
-  {
-    id: 'prod-9',
-    title: 'Retro 80s Cassette Tape Wireless Bluetooth Speaker',
-    description: 'Nostalgic transparent tape cassette casing packed with surprisingly punchy bass, 8-hour battery, and magnetic cassette box display case.',
-    category: 'Cool Tech Gadgets',
-    price: 27.99,
-    originalPrice: 38.00,
-    rating: 4.7,
-    reviewCount: 1980,
-    imageUrl: 'https://images.unsplash.com/photo-1545454675-3531b543be5d?w=800&auto=format&fit=crop&q=80',
-    platform: 'Amazon',
-    affiliateUrl: 'https://www.amazon.com/dp/B08RETROSPEAKER',
-    affiliateTag: 'sillycorns-20',
-    badge: 'Aesthetic 📻',
-    featured: false,
-    commissionRate: 8,
-    createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-  },
-  {
-    id: 'prod-10',
-    title: 'Kawaii Toasted Bread Plushie Crossbody Bag',
-    description: 'Adorably grumpy smiling toast with dangling butter pad and adjustable strap. Carries phone, keys, lip gloss, and guaranteed compliments wherever you walk.',
-    category: 'Cute & Whimsical',
-    price: 18.50,
-    originalPrice: 25.00,
-    rating: 4.9,
-    reviewCount: 3100,
-    imageUrl: 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=800&auto=format&fit=crop&q=80',
-    platform: 'TikTok Shop',
-    affiliateUrl: 'https://www.tiktok.com/view/product/toast-plush-bag',
-    affiliateTag: 'tiktok-creator-finds',
-    badge: 'Cute Alert 🍞',
-    featured: false,
-    commissionRate: 12,
-    createdAt: new Date(Date.now() - 4 * 86400000).toISOString(),
-  },
-  {
-    id: 'prod-11',
-    title: 'Mini Desktop Wooden Bowling Alley Alley Game Set',
-    description: 'Solid wood miniature bowling lane with adjustable metal launcher ramp and 10 weighted pins. Perfect micro-break diversion for desks and office tournaments.',
-    category: 'Desk Toys & Fidgets',
-    price: 15.99,
-    originalPrice: 22.99,
-    rating: 4.6,
-    reviewCount: 1650,
-    imageUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=80',
-    platform: 'Amazon',
-    affiliateUrl: 'https://www.amazon.com/dp/B07MINIBOWL',
-    affiliateTag: 'sillycorns-20',
-    badge: 'Desk Fun 🎳',
-    featured: false,
-    commissionRate: 6,
-    createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
-  },
-  {
-    id: 'prod-12',
-    title: 'Screaming Rubber Chicken Stress Reliever Keyring',
-    description: 'The timeless classic squawker in portable keychain form. Produces an unmistakably loud, hilarious shriek that diffuses tension immediately.',
-    category: 'Gifts & Novelties',
-    price: 7.99,
-    originalPrice: 11.99,
-    rating: 4.8,
-    reviewCount: 7800,
-    imageUrl: 'https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=800&auto=format&fit=crop&q=80',
-    platform: 'AliExpress',
-    affiliateUrl: 'https://www.aliexpress.com/item/1005001239847.html',
-    affiliateTag: 'silly_ali_partner',
-    badge: 'Under $10 🐔',
-    featured: false,
-    commissionRate: 10,
-    createdAt: new Date(Date.now() - 1 * 86400000).toISOString(),
-  },
-];
+// Products are added through the owner hub and persisted in data/products.json.
 
 // In-memory data store with file persistence
 let products: Product[] = [];
@@ -346,31 +128,31 @@ function loadData() {
     if (fs.existsSync(PRODUCTS_FILE)) {
       products = JSON.parse(fs.readFileSync(PRODUCTS_FILE, 'utf-8'));
     } else {
-      products = [...INITIAL_PRODUCTS];
+      products = [];
       fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(products, null, 2));
     }
   } catch (err) {
     console.error('Error loading products, using defaults');
-    products = [...INITIAL_PRODUCTS];
+    products = [];
   }
 
   try {
     if (fs.existsSync(CLICKS_FILE)) {
       clicks = JSON.parse(fs.readFileSync(CLICKS_FILE, 'utf-8'));
     } else {
-      clicks = generateSeedClicks();
+      clicks = [];
       fs.writeFileSync(CLICKS_FILE, JSON.stringify(clicks, null, 2));
     }
   } catch (err) {
     console.error('Error loading clicks');
-    clicks = generateSeedClicks();
+    clicks = [];
   }
 
   try {
     if (fs.existsSync(CONVERSIONS_FILE)) {
       conversions = JSON.parse(fs.readFileSync(CONVERSIONS_FILE, 'utf-8'));
     } else {
-      conversions = generateSeedConversions(clicks);
+      conversions = [];
       fs.writeFileSync(CONVERSIONS_FILE, JSON.stringify(conversions, null, 2));
     }
   } catch (err) {
@@ -387,66 +169,6 @@ function saveData() {
   } catch (err) {
     console.error('Error saving data');
   }
-}
-
-function generateSeedClicks(): ClickEvent[] {
-  const referrers = ['tiktok.com', 'instagram.com', 'pinterest.com', 'youtube.com', 'direct', 'google.com'];
-  const devices: ('Mobile' | 'Desktop' | 'Tablet')[] = ['Mobile', 'Mobile', 'Mobile', 'Desktop', 'Desktop', 'Tablet'];
-  const generated: ClickEvent[] = [];
-  const now = Date.now();
-
-  // Generate around 180 realistic clicks across the last 14 days
-  for (let i = 0; i < 180; i++) {
-    const randomProduct = INITIAL_PRODUCTS[Math.floor(Math.random() * INITIAL_PRODUCTS.length)];
-    // bias toward recent days
-    const dayOffset = Math.floor(Math.pow(Math.random(), 1.5) * 14);
-    const hourOffset = Math.floor(Math.random() * 24);
-    const minuteOffset = Math.floor(Math.random() * 60);
-    const timestamp = new Date(now - (dayOffset * 86400000 + hourOffset * 3600000 + minuteOffset * 60000)).toISOString();
-    const referrer = referrers[Math.floor(Math.random() * referrers.length)];
-    const device = devices[Math.floor(Math.random() * devices.length)];
-
-    generated.push({
-      id: `click-${i + 1}`,
-      productId: randomProduct.id,
-      productTitle: randomProduct.title,
-      productPrice: randomProduct.price,
-      platform: randomProduct.platform,
-      category: randomProduct.category,
-      timestamp,
-      referrer,
-      device,
-      utmSource: referrer === 'direct' ? undefined : referrer.split('.')[0],
-      utmMedium: 'affiliate_link',
-      utmCampaign: 'viral_curation',
-      destinationUrl: buildAffiliateRedirectUrl(randomProduct, { utm_source: referrer.split('.')[0] }),
-    });
-  }
-
-  // Sort descending by timestamp
-  return generated.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-}
-
-function generateSeedConversions(initialClicks: ClickEvent[]): ConversionEvent[] {
-  const convs: ConversionEvent[] = [];
-  // Sample conversion rate roughly 8-12%
-  initialClicks.forEach((click, index) => {
-    if (index % 9 === 0) {
-      const commRate = 0.08;
-      const orderVal = click.productPrice * (Math.random() > 0.6 ? 2 : 1);
-      convs.push({
-        id: `conv-${convs.length + 1}`,
-        clickId: click.id,
-        productId: click.productId,
-        productTitle: click.productTitle,
-        orderValue: Number(orderVal.toFixed(2)),
-        commissionEarned: Number((orderVal * commRate).toFixed(2)),
-        timestamp: new Date(new Date(click.timestamp).getTime() + 15 * 60000).toISOString(),
-        platform: click.platform,
-      });
-    }
-  });
-  return convs;
 }
 
 // Build URL ensuring direct affiliate links and tracking parameters
@@ -884,9 +606,7 @@ app.get('/api/analytics/public', (req, res) => {
 app.get('/api/analytics', requireOwnerAuth, (req, res) => {
   const totalClicks = clicks.length;
   const hashedClicks = clicks.filter(c => c.visitorHash);
-  const uniqueVisitors = hashedClicks.length > 0
-    ? new Set(hashedClicks.map(c => c.visitorHash)).size
-    : Math.round(totalClicks * 0.72) || totalClicks; // fallback estimate for pre-existing seed data with no visitorHash
+  const uniqueVisitors = new Set(hashedClicks.map(c => c.visitorHash)).size;
   const totalConversions = conversions.length;
   const conversionRate = totalClicks > 0 ? Number(((totalConversions / totalClicks) * 100).toFixed(1)) : 0;
 
@@ -1013,10 +733,10 @@ app.get('/api/analytics', requireOwnerAuth, (req, res) => {
 
 // RESET OR RESEED ANALYTICS
 app.post('/api/analytics/reset', requireOwnerAuth, (req, res) => {
-  clicks = generateSeedClicks();
-  conversions = generateSeedConversions(clicks);
+  clicks = [];
+  conversions = [];
   saveData();
-  res.json({ success: true, message: 'Analytics reset to fresh seed data' });
+  res.json({ success: true, message: 'Analytics reset to empty live data' });
 });
 
 app.use((err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {

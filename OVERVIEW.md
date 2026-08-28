@@ -11,7 +11,7 @@ The design is a retro-modern neo-brutalist aesthetic — bold typography, playfu
 ## 1. Core Capabilities
 
 ### Public Storefront
-- Responsive card grid of curated Amazon finds — image, title, description, category badge, and a "View on Amazon" button.
+- Responsive card grid of owner-entered Amazon finds — image, title, description, category badge, and a "View on Amazon" button.
 - Real-time search, category filtering, and a mobile bottom-dock navigation.
 - Quick-preview modal for a product before committing to the outbound click.
 
@@ -86,9 +86,9 @@ Additional hardening in place:
 
 Available under **Owner Hub → Records & Clicks**, and via `GET /api/analytics`:
 
-- **Total clicks** and **unique visitors** — uniqueness is computed from an anonymous fingerprint (`sha256(ip + user-agent + date)`), not a real account/session system, so it resets daily and never stores raw IPs.
+- **Total clicks** and **unique visitors** — uniqueness is computed from an anonymous fingerprint (`sha256(ip + user-agent + date)`), not a real account/session system, so it resets daily and never stores raw IPs. Counts remain zero until real clicks occur.
 - **Conversion rate** — conversions ÷ clicks, from manually or programmatically recorded `ConversionEvent`s (there's no live Amazon order-status integration; this is a self-reported/simulated figure until a real affiliate-network webhook is wired in).
-- **14-day click trend**, **top products by clicks**, **platform/category/device breakdowns**, and a **recent click stream** (last 50) with CSV export.
+- **14-day click trend**, **top products by clicks**, **platform/category/device breakdowns**, and a **recent live click stream** (last 50) with CSV export. New deployments begin with no synthetic records.
 
 ---
 
