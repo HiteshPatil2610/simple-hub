@@ -163,8 +163,13 @@ export function buildAffiliateRedirectUrl(
   params: { utm_source?: string; utm_medium?: string; utm_campaign?: string; subid?: string } = {}
 ): string {
   try {
-    const rawUrl = (product.affiliateUrl || '').trim();
+    let rawUrl = (product.affiliateUrl || '').trim();
     if (!rawUrl) return 'https://www.amazon.com';
+
+    // Ensure URL has http:// or https:// so Express res.redirect sends an absolute URL
+    if (!/^https?:\/\//i.test(rawUrl)) {
+      rawUrl = `https://${rawUrl}`;
+    }
 
     // amzn.to short links already embed the affiliate tag — pass through unchanged.
     if (rawUrl.includes('amzn.to/')) {
@@ -174,12 +179,10 @@ export function buildAffiliateRedirectUrl(
     const urlObj = new URL(rawUrl);
 
     // If the user already has a `tag` param in the URL, keep it intact.
-    if (urlObj.searchParams.has('tag')) {
-      return urlObj.toString();
+    if (!urlObj.searchParams.has('tag')) {
+      const tag = product.affiliateTag || 'raccoonhub-20';
+      urlObj.searchParams.set('tag', tag);
     }
-
-    const tag = product.affiliateTag || 'raccoonhub-20';
-    urlObj.searchParams.set('tag', tag);
 
     if (params.utm_source)   urlObj.searchParams.set('utm_source',   params.utm_source);
     if (params.utm_medium)   urlObj.searchParams.set('utm_medium',   params.utm_medium);
@@ -190,7 +193,11 @@ export function buildAffiliateRedirectUrl(
 
     return urlObj.toString();
   } catch {
-    return product.affiliateUrl || 'https://www.amazon.com';
+    let fallback = (product.affiliateUrl || 'https://www.amazon.com').trim();
+    if (!/^https?:\/\//i.test(fallback)) {
+      fallback = `https://${fallback}`;
+    }
+    return fallback;
   }
 }
 

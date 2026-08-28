@@ -225,6 +225,11 @@ export const ProductAdminModal: React.FC<ProductAdminModalProps> = ({
         // use default
       }
 
+      let normalizedAffiliateUrl = affiliateUrl.trim();
+      if (!/^https?:\/\//i.test(normalizedAffiliateUrl)) {
+        normalizedAffiliateUrl = `https://${normalizedAffiliateUrl}`;
+      }
+
       await onSave({
         title: title.trim(),
         description: description.trim() || 'Curated Amazon find hand-picked for Raccoon Hub.',
@@ -233,7 +238,7 @@ export const ProductAdminModal: React.FC<ProductAdminModalProps> = ({
         rating: editingProduct?.rating || 5,
         reviewCount: editingProduct?.reviewCount || 100,
         imageUrl: imageUrl.trim(),
-        affiliateUrl: affiliateUrl.trim(),
+        affiliateUrl: normalizedAffiliateUrl,
         affiliateTag: extractedTag,
       });
       onClose();

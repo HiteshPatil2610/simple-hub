@@ -134,7 +134,23 @@ export default function App() {
     // 1. Show immediate visual feedback toast
     setRedirectToastProduct(product);
 
-    // The redirect route records the click before forwarding the visitor.
+    try {
+      // Record click telemetry beacon and retrieve final Amazon URL
+      const res = await api.trackClick({
+        productId: product.id,
+        utmSource: 'raccoonhub',
+        utmMedium: 'affiliate_card',
+        utmCampaign: 'amazon_finds',
+        subid: product.customSubId || 'raccoon_user',
+      });
+      if (res?.destinationUrl) {
+        window.open(res.destinationUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+    } catch {
+      // Fallback to server 302 redirect route
+    }
+
     const redirectUrl = api.getRedirectUrl(product.id, {
       utm_source: 'raccoonhub',
       utm_medium: 'affiliate_card',
