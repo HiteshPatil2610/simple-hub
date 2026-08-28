@@ -152,7 +152,7 @@ export const ProductAdminModal: React.FC<ProductAdminModalProps> = ({
       const uploadedUrl = await api.uploadImage(compressedDataUrl, file.name);
       setImageUrl(uploadedUrl);
     } catch (err: any) {
-      console.error('File upload failed:', err);
+      console.error('File upload failed');
       setError(err?.message || 'Failed to upload image. Please try again or use another image.');
     } finally {
       setIsUploading(false);

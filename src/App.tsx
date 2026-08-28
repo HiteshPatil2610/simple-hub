@@ -27,6 +27,7 @@ export default function App() {
   const [ownerSubTab, setOwnerSubTab] = useState<'products' | 'analytics'>('products');
   const [products, setProducts] = useState<Product[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [clicksToday, setClicksToday] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -67,13 +68,16 @@ export default function App() {
   }, []);
 
   // Silently re-validate a previously-stored owner key so returning owners
-  // aren't re-prompted every visit, without ever trusting localStorage alone.
+  // aren't re-prompted every visit, without ever trusting session storage alone.
   useEffect(() => {
     const storedKey = getOwnerKey();
     api
       .verifyOwnerKey(storedKey)
       .then(ok => {
-        if (ok) setIsOwnerAuthed(true);
+        if (ok) {
+          setIsOwnerAuthed(true);
+          refreshAnalytics();
+        }
         else clearOwnerKey();
       })
       .catch(() => {})
@@ -94,14 +98,14 @@ export default function App() {
   const loadStoreData = async () => {
     try {
       setIsLoading(true);
-      const [prodsData, analyticsData] = await Promise.all([
+      const [prodsData, publicAnalytics] = await Promise.all([
         api.getProducts(),
-        api.getAnalytics(),
+        api.getPublicAnalytics(),
       ]);
       setProducts(prodsData);
-      setAnalytics(analyticsData);
+      setClicksToday(publicAnalytics.clicksToday);
     } catch (err) {
-      console.error('Failed to load initial data:', err);
+      console.error('Failed to load initial data');
     } finally {
       setIsLoading(false);
     }
@@ -113,7 +117,7 @@ export default function App() {
       const analyticsData = await api.getAnalytics();
       setAnalytics(analyticsData);
     } catch (err) {
-      console.error('Failed to refresh analytics:', err);
+      console.error('Failed to refresh analytics');
     } finally {
       setIsRefreshing(false);
     }
@@ -135,7 +139,7 @@ export default function App() {
         refreshAnalytics();
       });
     } catch (err) {
-      console.error('Tracking beacon error:', err);
+      console.error('Tracking beacon error');
     }
 
     // 3. Seamlessly redirect via tracking route in new tab
@@ -232,7 +236,7 @@ export default function App() {
           setIsAddModalOpen(true);
         }}
         totalProducts={products.length}
-        totalClicksToday={analytics?.clicksToday || 28}
+        totalClicksToday={clicksToday}
       />
 
       {/* Main View Router */}
@@ -318,7 +322,12 @@ export default function App() {
               {isCheckingOwnerAuth ? (
                 <div className="py-16 text-center text-sm font-bold text-[#2D3436]/60">Checking access…</div>
               ) : !isOwnerAuthed ? (
-                <OwnerGate onUnlocked={() => setIsOwnerAuthed(true)} />
+                <OwnerGate
+                  onUnlocked={() => {
+                    setIsOwnerAuthed(true);
+                    refreshAnalytics();
+                  }}
+                />
               ) : ownerSubTab === 'products' ? (
                 <OwnerProductManager
                   products={products}

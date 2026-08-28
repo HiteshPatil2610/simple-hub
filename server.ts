@@ -312,7 +312,7 @@ function loadData() {
       fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(products, null, 2));
     }
   } catch (err) {
-    console.error('Error loading products, using defaults:', err);
+    console.error('Error loading products, using defaults');
     products = [...INITIAL_PRODUCTS];
   }
 
@@ -324,7 +324,7 @@ function loadData() {
       fs.writeFileSync(CLICKS_FILE, JSON.stringify(clicks, null, 2));
     }
   } catch (err) {
-    console.error('Error loading clicks:', err);
+    console.error('Error loading clicks');
     clicks = generateSeedClicks();
   }
 
@@ -336,7 +336,7 @@ function loadData() {
       fs.writeFileSync(CONVERSIONS_FILE, JSON.stringify(conversions, null, 2));
     }
   } catch (err) {
-    console.error('Error loading conversions:', err);
+    console.error('Error loading conversions');
     conversions = [];
   }
 }
@@ -347,7 +347,7 @@ function saveData() {
     fs.writeFileSync(CLICKS_FILE, JSON.stringify(clicks, null, 2));
     fs.writeFileSync(CONVERSIONS_FILE, JSON.stringify(conversions, null, 2));
   } catch (err) {
-    console.error('Error saving data:', err);
+    console.error('Error saving data');
   }
 }
 
@@ -498,7 +498,7 @@ app.post('/api/upload', requireOwnerAuth, uploadLimiter, (req, res) => {
 
     res.json({ imageUrl: publicUrl, success: true });
   } catch (err: any) {
-    console.error('Image upload failed:', err);
+    console.error('Image upload failed');
     res.status(500).json({ error: 'Failed to process and store image upload' });
   }
 });
@@ -521,6 +521,15 @@ function parseDevice(userAgent?: string): 'Mobile' | 'Desktop' | 'Tablet' {
   if (/ipad|tablet|(android(?!.*mobile))/i.test(ua)) return 'Tablet';
   if (/mobile|iphone|ipod|android|blackberry|mini|windows\sce|palm/i.test(ua)) return 'Mobile';
   return 'Desktop';
+}
+
+function normalizeReferrer(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) return 'direct';
+  try {
+    return new URL(value).hostname || 'direct';
+  } catch {
+    return value.replace(/[^a-zA-Z0-9.-]/g, '').slice(0, 255) || 'direct';
+  }
 }
 
 loadData();
@@ -772,7 +781,7 @@ app.post('/api/track/click', trackLimiter, (req, res) => {
     platform: product.platform,
     category: product.category,
     timestamp: new Date().toISOString(),
-    referrer: referrer || 'direct',
+    referrer: normalizeReferrer(referrer),
     device: parseDevice(userAgent),
     utmSource: utmSource || 'storefront',
     utmMedium: utmMedium || 'affiliate_card',
@@ -821,8 +830,18 @@ app.post('/api/analytics/conversion', requireOwnerAuth, (req, res) => {
   res.status(201).json(convEvent);
 });
 
-// GET ANALYTICS SUMMARY
-app.get('/api/analytics', (req, res) => {
+function getClicksToday(): number {
+  const todayStr = new Date().toISOString().split('T')[0];
+  return clicks.filter(c => c.timestamp.startsWith(todayStr)).length;
+}
+
+// Public analytics are limited to a non-identifying aggregate.
+app.get('/api/analytics/public', (req, res) => {
+  res.json({ clicksToday: getClicksToday() });
+});
+
+// GET ANALYTICS SUMMARY (owner-only because it contains click telemetry)
+app.get('/api/analytics', requireOwnerAuth, (req, res) => {
   const totalClicks = clicks.length;
   const hashedClicks = clicks.filter(c => c.visitorHash);
   const uniqueVisitors = hashedClicks.length > 0
@@ -834,8 +853,7 @@ app.get('/api/analytics', (req, res) => {
   const estimatedGrossVolume = conversions.reduce((sum, c) => sum + c.orderValue, 0);
   const estimatedCommission = conversions.reduce((sum, c) => sum + c.commissionEarned, 0);
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const clicksToday = clicks.filter(c => c.timestamp.startsWith(todayStr)).length;
+  const clicksToday = getClicksToday();
 
   // Clicks by day (last 14 days)
   const daysMap = new Map<string, { clicks: number; conversions: number }>();
@@ -947,7 +965,7 @@ app.get('/api/analytics', (req, res) => {
     platformBreakdown,
     categoryBreakdown,
     deviceBreakdown,
-    recentClicks: clicks.slice(0, 50),
+    recentClicks: clicks.slice(0, 50).map(({ visitorHash, ...click }) => click),
   };
 
   res.json(summary);

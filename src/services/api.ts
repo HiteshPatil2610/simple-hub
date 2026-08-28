@@ -3,15 +3,15 @@ import { Product, ClickEvent, AnalyticsSummary, ConversionEvent } from '../types
 const OWNER_KEY_STORAGE = 'owner_hub_key';
 
 export function getOwnerKey(): string {
-  return localStorage.getItem(OWNER_KEY_STORAGE) || '';
+  return sessionStorage.getItem(OWNER_KEY_STORAGE) || '';
 }
 
 export function setOwnerKey(key: string): void {
-  localStorage.setItem(OWNER_KEY_STORAGE, key);
+  sessionStorage.setItem(OWNER_KEY_STORAGE, key);
 }
 
 export function clearOwnerKey(): void {
-  localStorage.removeItem(OWNER_KEY_STORAGE);
+  sessionStorage.removeItem(OWNER_KEY_STORAGE);
 }
 
 function ownerHeaders(): Record<string, string> {
@@ -133,8 +133,14 @@ export const api = {
 
   // Analytics
   async getAnalytics(): Promise<AnalyticsSummary> {
-    const res = await fetch('/api/analytics');
+    const res = await fetch('/api/analytics', { headers: { ...ownerHeaders() } });
     if (!res.ok) throw new Error('Failed to fetch analytics');
+    return res.json();
+  },
+
+  async getPublicAnalytics(): Promise<{ clicksToday: number }> {
+    const res = await fetch('/api/analytics/public');
+    if (!res.ok) throw new Error('Failed to fetch public analytics');
     return res.json();
   },
 

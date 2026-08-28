@@ -63,9 +63,11 @@ Gated behind a passcode (see [Authentication](#3-authentication--security)). Onc
 
 The Owner Control Hub and its underlying API routes are protected by a single shared passcode, set via the `OWNER_KEY` environment variable:
 
-- **Client side:** navigating to `/#admin` shows a passcode prompt (`OwnerGate`) before any admin UI renders. The entered key is verified against the server and, once valid, stored in `localStorage` and attached as an `x-owner-key` header on subsequent admin requests.
-- **Server side:** every mutating route — creating/editing/deleting products, image upload, resetting analytics, recording a conversion — is wrapped in a `requireOwnerAuth` middleware that checks the `x-owner-key` header against `OWNER_KEY`. Requests without a valid key get `401 Unauthorized`.
+- **Client side:** navigating to `/#admin` shows a passcode prompt (`OwnerGate`) before any admin UI renders. The entered key is verified against the server and, once valid, stored in session storage and attached as an `x-owner-key` header on subsequent admin requests. This is a sensitive browser-stored credential and should only be used over HTTPS.
+- **Server side:** every mutating route — creating/editing/deleting products, image upload, resetting analytics, recording a conversion — plus detailed analytics is wrapped in a `requireOwnerAuth` middleware that checks the `x-owner-key` header against `OWNER_KEY`. Requests without a valid key get `401 Unauthorized`.
 - **Missing configuration:** if `OWNER_KEY` is left unset, protected routes return `503 Service Unavailable` instead of opening the admin API. Always set it before starting the server (see [DEPLOYMENT.md](./DEPLOYMENT.md)).
+
+Public analytics exposes only the aggregate `clicksToday` value. Detailed click records are owner-only; stored visitor fingerprints are used only to calculate unique counts and are omitted from API responses.
 
 Additional hardening in place:
 
@@ -124,7 +126,8 @@ Data persists as flat JSON files in `data/`, loaded into memory on boot and rewr
 | `GET`/`GET` | `/api/redirect/:id`, `/r/:id` | — (rate-limited) | Log a click and 302-redirect to Amazon |
 | `POST` | `/api/track/click` | — (rate-limited) | Client-side click beacon, returns the destination URL without redirecting |
 | `POST` | `/api/analytics/conversion` | ✅ | Record a conversion |
-| `GET` | `/api/analytics` | — | Full analytics summary |
+| `GET` | `/api/analytics/public` | — | Public `clicksToday` aggregate only |
+| `GET` | `/api/analytics` | ✅ | Full owner analytics summary |
 | `POST` | `/api/analytics/reset` | ✅ | Wipe and reseed analytics data |
 | `POST` | `/api/owner/verify` | ✅ | Verify an `x-owner-key` header (used by the login gate) |
 
