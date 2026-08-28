@@ -128,21 +128,7 @@ export default function App() {
     // 1. Show immediate visual feedback toast
     setRedirectToastProduct(product);
 
-    // 2. Track click beacon
-    try {
-      api.trackClick({
-        productId: product.id,
-        utmSource: 'raccoonhub_storefront',
-        utmMedium: 'product_card',
-        utmCampaign: 'curated_amazon_finds',
-      }).then(() => {
-        refreshAnalytics();
-      });
-    } catch (err) {
-      console.error('Tracking beacon error');
-    }
-
-    // 3. Seamlessly redirect via tracking route in new tab
+    // The redirect route records the click before forwarding the visitor.
     const redirectUrl = api.getRedirectUrl(product.id, {
       utm_source: 'raccoonhub',
       utm_medium: 'affiliate_card',
