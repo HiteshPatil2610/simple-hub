@@ -9,8 +9,6 @@ import {
   Image as ImageIcon,
   Trash2,
   RefreshCw,
-  ExternalLink,
-  Sparkles,
 } from 'lucide-react';
 import { Product } from '../types';
 import { api } from '../services/api';

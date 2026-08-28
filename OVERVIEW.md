@@ -26,7 +26,7 @@ The design is a retro-modern neo-brutalist aesthetic — bold typography, playfu
 - After logging, the visitor is forwarded with a standard HTTP 302 redirect — no client-side delay.
 
 ### Owner Control Hub (`/#admin`)
-Gated behind a passcode (see [Authentication](#3-authentication--security)). Once unlocked:
+Gated behind username + password login (see [Authentication](#3-authentication--security)). Once unlocked:
 - **Manage Products** — add, edit, delete listings; upload product photos directly from device storage; switch between list and grid views; one-click "Test Link" and "Copy Link".
 - **Records & Clicks** — real-time totals for clicks and unique visitors, a 14-day trend graph, a product performance leaderboard, a searchable click stream, and CSV export.
 
@@ -37,9 +37,9 @@ Gated behind a passcode (see [Authentication](#3-authentication--security)). Onc
 ```
 [Store Owner]
       │
-      ├─► Unlocks "Owner Hub" (/#admin) with OWNER_KEY passcode
-      ├─► Adds/edits a product (title, description, category)
-      ├─► Uploads an image from device storage (/api/upload)
+      ├─► Logs in to "Owner Hub" (/#admin) with username + password → receives JWT
+      ├─► Adds/edits a product (title, description, category) — Amazon only
+      ├─► Uploads an image from device storage (/api/upload — magic-bytes validated)
       └─► Pastes a direct Amazon affiliate link
             │
             ▼
@@ -52,27 +52,31 @@ Gated behind a passcode (see [Authentication](#3-authentication--security)). Onc
             ├─► Rate-limited per IP
             ├─► Logs telemetry (timestamp, device, referrer, visitor hash)
             ├─► Increments click / unique-visitor counters
+            ├─► Auto-purges clicks > CLICK_RETENTION_DAYS old (startup + daily)
             │
             ▼
     [Amazon product page, with affiliate tag + UTM params]
+
+   [Affiliate Network Webhook] ──► POST /api/webhooks/conversion (HMAC-verified)
 ```
 
 ---
 
 ## 3. Authentication & Security
 
-The Owner Control Hub and its underlying API routes are protected by a single shared passcode, set via the `OWNER_KEY` environment variable:
+The Owner Control Hub uses **JWT-based multi-user auth** instead of the previous single shared passcode:
 
-- **Client side:** navigating to `/#admin` shows a passcode prompt (`OwnerGate`) before any admin UI renders. The entered key is verified against the server and, once valid, stored in session storage and attached as an `x-owner-key` header on subsequent admin requests. This is a sensitive browser-stored credential and should only be used over HTTPS.
-- **Server side:** every mutating route — creating/editing/deleting products, image upload, resetting analytics, recording a conversion — plus detailed analytics is wrapped in a `requireOwnerAuth` middleware that checks the `x-owner-key` header against `OWNER_KEY`. Requests without a valid key get `401 Unauthorized`.
-- **Missing configuration:** if `OWNER_KEY` is left unset, protected routes return `503 Service Unavailable` instead of opening the admin API. Always set it before starting the server (see [DEPLOYMENT.md](./DEPLOYMENT.md)).
-
-Public analytics exposes only the aggregate `clicksToday` value. Detailed click records are owner-only; stored visitor fingerprints are used only to calculate unique counts and are omitted from API responses.
+- **Login**: `POST /api/auth/login` — accepts `{username, password}`, returns a signed JWT valid for `JWT_EXPIRY` (default 8 h). Passwords are hashed with `crypto.scrypt` (64-byte key, random salt).
+- **Client side**: The JWT is stored in session storage and sent as `Authorization: Bearer <token>` on all admin requests.
+- **Server side**: `requireAuth` middleware validates the JWT signature and expiry using `JWT_SECRET`. All mutating admin routes require a valid token.
+- **Bootstrap**: On first boot with no users, the server creates an initial admin account from `OWNER_USER` / `OWNER_PASS` env vars (defaults to `admin` / `changeme` in development with a warning). After first login, remove or rotate those env vars.
+- **Legacy compatibility**: The old `x-owner-key` header is still accepted on `POST /api/owner/verify` for existing integrations during transition.
 
 Additional hardening in place:
 
 | Protection | Where |
 |---|---|
+| Image upload **magic bytes** check (declared MIME type must match actual file content bytes) | `POST /api/upload` |
 | Image upload type allowlist (JPG/PNG/GIF/WEBP only — no SVG, which can carry inline scripts) | `POST /api/upload` |
 | Image upload size cap (8MB decoded) | `POST /api/upload` |
 | Randomized upload filenames | `POST /api/upload` |
@@ -87,7 +91,8 @@ Additional hardening in place:
 Available under **Owner Hub → Records & Clicks**, and via `GET /api/analytics`:
 
 - **Total clicks** and **unique visitors** — uniqueness is computed from an anonymous fingerprint (`sha256(ip + user-agent + date)`), not a real account/session system, so it resets daily and never stores raw IPs. Counts remain zero until real clicks occur.
-- **Conversion rate** — conversions ÷ clicks, from manually or programmatically recorded `ConversionEvent`s (there's no live Amazon order-status integration; this is a self-reported/simulated figure until a real affiliate-network webhook is wired in).
+- **Conversion rate** — conversions ÷ clicks, from manually or programmatically recorded `ConversionEvent`s. See also the webhook endpoint for automated recording from third-party affiliate networks.
+- **Data retention** — click records older than `CLICK_RETENTION_DAYS` (default 90) are automatically purged on startup and every 24 hours to prevent unbounded database growth.
 - **14-day click trend**, **top products by clicks**, **platform/category/device breakdowns**, and a **recent live click stream** (last 50) with CSV export. New deployments begin with no synthetic records.
 
 ---
@@ -98,15 +103,17 @@ Data persists in a single SQLite database file (`raccoon-hub.sqlite`) inside `DA
 
 | Table | Contents |
 |---|---|
-| `products` | Product catalog |
-| `clicks` | Every outbound click event |
-| `conversions` | Recorded conversions |
+| `products`    | Product catalog (Amazon platform only) |
+| `clicks`      | Every outbound click event |
+| `conversions` | Recorded conversions (manual or webhook) |
+| `users`       | Admin accounts (username, scrypt password hash, salt, role) |
 
 | Type | Key fields |
 |---|---|
-| `Product` | `id`, `title`, `description`, `category`, `imageUrl`, `platform`, `affiliateUrl`, `affiliateTag`, `featured` |
-| `ClickEvent` | `id`, `productId`, `timestamp`, `referrer`, `device`, `utmSource/Medium/Campaign`, `destinationUrl`, `visitorHash` |
+| `Product`         | `id`, `title`, `description`, `category`, `imageUrl`, `platform` (`'Amazon'`), `affiliateUrl`, `affiliateTag`, `featured` |
+| `ClickEvent`      | `id`, `productId`, `timestamp`, `referrer`, `device`, `utmSource/Medium/Campaign`, `destinationUrl`, `visitorHash` |
 | `ConversionEvent` | `id`, `clickId`, `productId`, `timestamp`, `platform` |
+| `User`            | `id`, `username`, `passwordHash`, `salt`, `role`, `createdAt` |
 
 On the first boot against a fresh database, historical data from the legacy `data/products.json`, `data/clicks.json` and `data/conversions.json` is imported automatically (the migration is idempotent and the JSON files are left in place as a backup). **Requires Node.js ≥ 22.5** for the built-in `node:sqlite` module.
 
@@ -116,22 +123,26 @@ On the first boot against a fresh database, historical data from the legacy `dat
 
 | Method | Route | Auth | Purpose |
 |---|---|---|---|
-| `GET` | `/api/health` | — | Health check |
-| `GET` | `/api/products` | — | List products (`?category=`, `?search=`, `?platform=`, `?featured=`) |
-| `GET` | `/api/products/:id` | — | Get one product |
-| `POST` | `/api/products` | ✅ | Create a product |
-| `PUT` | `/api/products/:id` | ✅ | Update a product |
-| `DELETE` | `/api/products/:id` | ✅ | Delete a product |
-| `POST` | `/api/upload` | ✅ | Upload a product image (base64 data URL) |
+| `GET`  | `/api/health`                  | —   | Health check |
+| `POST` | `/api/auth/login`              | —   | Login with username+password, returns JWT |
+| `GET`  | `/api/auth/me`                 | ✅  | Return current authenticated user |
+| `POST` | `/api/owner/verify`            | —   | Legacy passcode verify (backwards-compat) |
+| `GET`  | `/api/products`                | —   | List products (`?category=`, `?search=`, `?platform=`, `?featured=`) |
+| `GET`  | `/api/products/:id`            | —   | Get one product |
+| `POST` | `/api/products`                | ✅  | Create a product (Amazon platform only) |
+| `PUT`  | `/api/products/:id`            | ✅  | Update a product (Amazon platform only) |
+| `DELETE` | `/api/products/:id`          | ✅  | Delete a product |
+| `POST` | `/api/upload`                  | ✅  | Upload a product image (base64 data URL, magic-bytes validated) |
 | `GET`/`GET` | `/api/redirect/:id`, `/r/:id` | — (rate-limited) | Log a click and 302-redirect to Amazon |
-| `POST` | `/api/track/click` | — (rate-limited) | Client-side click beacon, returns the destination URL without redirecting |
-| `POST` | `/api/analytics/conversion` | ✅ | Record a conversion |
-| `GET` | `/api/analytics/public` | — | Public `clicksToday` aggregate only |
-| `GET` | `/api/analytics` | ✅ | Full owner analytics summary |
-| `POST` | `/api/analytics/reset` | ✅ | Wipe and reseed analytics data |
-| `POST` | `/api/owner/verify` | ✅ | Verify an `x-owner-key` header (used by the login gate) |
+| `POST` | `/api/track/click`             | — (rate-limited) | Client-side click beacon, returns the destination URL without redirecting |
+| `POST` | `/api/analytics/conversion`    | ✅  | Record a conversion manually |
+| `POST` | `/api/webhooks/conversion`     | HMAC | Accept signed conversion webhook from affiliate networks |
+| `GET`  | `/api/analytics/public`        | —   | Public `clicksToday` aggregate only |
+| `GET`  | `/api/analytics`               | ✅  | Full owner analytics summary |
+| `POST` | `/api/analytics/reset`         | ✅  | Wipe and reseed analytics data |
 
-✅ = requires a valid `x-owner-key` header matching `OWNER_KEY`.
+✅ = requires a valid `Authorization: Bearer <jwt>` header.
+HMAC = requires a valid `X-Webhook-Signature: sha256=<hmac>` header (HMAC-SHA256 with `WEBHOOK_SECRET`).
 
 ---
 
@@ -140,26 +151,29 @@ On the first boot against a fresh database, historical data from the legacy `dat
 | Layer | Technology |
 |---|---|
 | Frontend | React 19, Vite 6, Tailwind CSS 4, Motion (animations), Recharts (charts), Lucide (icons) |
-| Backend | Express 4, TypeScript, `tsx` (dev) / `esbuild` (production bundle) |
+| Backend  | Express 4, TypeScript, `jsonwebtoken`, `tsx` (dev) / `esbuild` (production bundle) |
 | Database | SQLite via Node's built-in `node:sqlite` (`data/raccoon-hub.sqlite`); `public/uploads/` for images |
+| Testing  | Node's built-in `node:test` runner — `npm test` runs 16 tests, 0 dependencies |
 
 ---
 
 ## 8. Project Structure
 
 ```
-├── server.ts                        # Express API, auth, redirect/telemetry logic
-├── db.ts                            # SQLite schema + data-access layer + JSON migration
+├── server.ts                        # Express API, JWT auth, redirects, webhooks, retention scheduler
+├── db.ts                            # SQLite schema + data-access layer + user management + JSON migration
 ├── index.html                       # Vite entry HTML
 ├── metadata.json                    # Project metadata (name: "Simple Hub")
-├── data/                            # Persisted SQLite DB + uploads
+├── data/                            # Persisted SQLite DB (products, clicks, conversions, users)
 ├── public/uploads/                  # Uploaded product images
+├── tests/
+│   └── db.test.ts                   # Automated test suite (16 tests — node:test)
 ├── src/
 │   ├── App.tsx                      # Top-level view routing (storefront vs owner hub)
 │   ├── main.tsx                     # React entry point
-│   ├── types.ts                     # Shared TypeScript types
+│   ├── types.ts                     # Shared TypeScript types (platform: 'Amazon')
 │   ├── index.css                    # Tailwind entry
-│   ├── services/api.ts              # Client-side API wrapper + owner-key handling
+│   ├── services/api.ts              # Client-side API wrapper + JWT Bearer token handling
 │   └── components/
 │       ├── Navbar.tsx
 │       ├── Footer.tsx
@@ -168,7 +182,7 @@ On the first boot against a fresh database, historical data from the legacy `dat
 │       ├── ProductAdminModal.tsx    # Add/edit product form, image upload
 │       ├── OwnerProductManager.tsx  # Product list/grid management UI
 │       ├── AnalyticsDashboard.tsx   # Records & Clicks tab
-│       ├── OwnerGate.tsx            # Passcode login screen for /#admin
+│       ├── OwnerGate.tsx            # Username + password login form (JWT)
 │       └── RedirectNotification.tsx # "Opening Amazon..." toast
 ├── .env.example                     # Environment variable template
 ├── README.md                        # Quick start
@@ -178,10 +192,13 @@ On the first boot against a fresh database, historical data from the legacy `dat
 
 ---
 
-## 9. Known Limitations
+## 9. Known Limitations (Resolved)
 
-- **No real affiliate-network webhook.** `POST /api/analytics/conversion` exists as a stub for recording conversions but isn't wired to any live Amazon Associates reporting — revenue figures are only as accurate as what's manually or programmatically fed into it.
-- **Seed catalog includes non-Amazon platforms** (TikTok Shop, AliExpress, Etsy) despite the product being scoped to Amazon Associates. Safe to delete these from the Owner Hub if you want the storefront to match the pitch exactly.
-- **Single shared owner passcode**, not per-user accounts — fine for a solo operator, not suitable if multiple people need distinct admin permissions.
-- **Single SQLite file**, not a networked database — fine for a solo operator and single-instance deploys; not suited to horizontally scaling the backend across many instances without switching to Postgres.
-- **`@google/genai` dependency** is present in `package.json` from the project's original scaffolding but isn't used anywhere in the current code — safe to remove if you want a leaner install, or safe to leave if you plan to add AI features later.
+- **No real affiliate-network webhook.** A generic HMAC-signed `POST /api/webhooks/conversion` endpoint is now available. Amazon Associates has no native real-time webhook API; use the manual `POST /api/analytics/conversion` endpoint after reviewing earnings in Associates Central, or wire the webhook endpoint to a compatible network (Impact, CJ Affiliate, ShareASale).
+- **Seed catalog includes non-Amazon platforms.** The `platform` type is now narrowed to `'Amazon'` only. Non-Amazon products can no longer be created or updated via the API.
+- **Single shared owner passcode.** Replaced with JWT-based multi-user auth (`POST /api/auth/login`). Multiple accounts can be created in the `users` table with distinct roles.
+- **Single SQLite file.** Still the default for solo operators. Switch to PostgreSQL if horizontal scaling is needed (migration path documented in `scripts/migrate-sqlite-to-pg.ts`).
+- **`@google/genai` dependency.** Already removed from `package.json` — the OVERVIEW was stale.
+- **No data retention rules.** Click records older than `CLICK_RETENTION_DAYS` (default 90 days) are now automatically purged on startup and daily.
+- **No image content validation.** Magic bytes are now checked against the declared MIME type to prevent spoofed uploads.
+- **No automated test suite.** `npm test` now runs `tests/db.test.ts` covering CRUD, retention, conversions, and magic bytes validation.

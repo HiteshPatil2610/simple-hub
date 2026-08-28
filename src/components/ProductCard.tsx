@@ -52,7 +52,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             alt={product.title}
             referrerPolicy="no-referrer"
             onLoad={() => setImageLoaded(true)}
-            className={`w-full h-full object-cover object-center transition-transform duration-500 ease-out group-hover:scale-108 ${
+            className={`w-full h-full object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105 ${
               imageLoaded ? 'opacity-100' : 'opacity-0'
             }`}
             onError={(e) => {

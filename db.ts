@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { Product, ClickEvent, ConversionEvent } from './src/types';
 
@@ -69,13 +70,24 @@ db.exec(`
     timestamp     TEXT NOT NULL,
     platform      TEXT NOT NULL DEFAULT 'Amazon'
   );
+
+  -- Multi-user auth: each user has a hashed password and a role.
+  CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE,
+    passwordHash  TEXT NOT NULL,
+    salt          TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'owner',
+    createdAt     TEXT NOT NULL
+  );
 `);
 
 // Keeping indexes cheap and useful for the analytics queries.
 db.exec(`
-  CREATE INDEX IF NOT EXISTS idx_clicks_timestamp   ON clicks(timestamp);
-  CREATE INDEX IF NOT EXISTS idx_clicks_productId   ON clicks(productId);
+  CREATE INDEX IF NOT EXISTS idx_clicks_timestamp      ON clicks(timestamp);
+  CREATE INDEX IF NOT EXISTS idx_clicks_productId      ON clicks(productId);
   CREATE INDEX IF NOT EXISTS idx_conversions_productId ON conversions(productId);
+  CREATE INDEX IF NOT EXISTS idx_users_username        ON users(username);
 `);
 
 // ============================================================================
@@ -345,6 +357,13 @@ export const store = {
     db.exec('DELETE FROM conversions;');
   },
 
+  // ---- data retention ----
+  // Purge click records older than `days` days to prevent unbounded DB growth.
+  deleteClicksOlderThan(days: number): number {
+    const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+    return Number(db.prepare('DELETE FROM clicks WHERE timestamp < ?').run(cutoff).changes);
+  },
+
   // ---- analytics helpers ----
   countTotalClicks(): number {
     return (db.prepare('SELECT COUNT(*) AS c FROM clicks').get() as { c: number }).c;
@@ -356,6 +375,49 @@ export const store = {
 
   countTotalConversions(): number {
     return (db.prepare('SELECT COUNT(*) AS c FROM conversions').get() as { c: number }).c;
+  },
+
+  // ---- user management (multi-user auth) ----
+  getUserByUsername(username: string): { id: string; username: string; passwordHash: string; salt: string; role: string } | undefined {
+    return db.prepare('SELECT * FROM users WHERE username = ?').get(username) as any;
+  },
+
+  getUserById(id: string): { id: string; username: string; role: string } | undefined {
+    const row = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(id) as any;
+    return row;
+  },
+
+  listUsers(): { id: string; username: string; role: string; createdAt: string }[] {
+    return db.prepare('SELECT id, username, role, createdAt FROM users ORDER BY createdAt ASC').all() as any[];
+  },
+
+  countUsers(): number {
+    return (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
+  },
+
+  // Hash a plaintext password using scrypt (synchronous for simplicity with node:sqlite).
+  hashPassword(password: string): { hash: string; salt: string } {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+    return { hash, salt };
+  },
+
+  verifyPassword(password: string, hash: string, salt: string): boolean {
+    try {
+      const derived = crypto.scryptSync(password, salt, 64).toString('hex');
+      return crypto.timingSafeEqual(Buffer.from(derived, 'hex'), Buffer.from(hash, 'hex'));
+    } catch {
+      return false;
+    }
+  },
+
+  createUser(username: string, password: string, role = 'owner'): { id: string; username: string; role: string } {
+    const id = `user-${Date.now()}`;
+    const { hash, salt } = store.hashPassword(password);
+    db.prepare(
+      'INSERT INTO users (id, username, passwordHash, salt, role, createdAt) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(id, username, hash, salt, role, new Date().toISOString());
+    return { id, username, role };
   },
 };
 

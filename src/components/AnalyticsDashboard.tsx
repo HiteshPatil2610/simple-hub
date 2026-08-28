@@ -311,18 +311,38 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                 </div>
 
                 <div className="text-xs text-[#2D3436] space-y-2">
-                  <div className="flex justify-between font-bold">
-                    <span>Direct / Browser Link</span>
-                    <span className="font-black text-[#FF6B6B]">46%</span>
-                  </div>
-                  <div className="flex justify-between font-bold">
-                    <span>Social Media & Mobile Apps</span>
-                    <span className="font-black text-[#4ECDC4]">34%</span>
-                  </div>
-                  <div className="flex justify-between font-bold">
-                    <span>Search & Referral</span>
-                    <span className="font-black text-[#2D3436]">20%</span>
-                  </div>
+                  {(() => {
+                    const total = analytics.recentClicks.length;
+                    if (total === 0) {
+                      return (
+                        <div className="text-[#2D3436]/60 font-bold text-center py-2">No click data yet.</div>
+                      );
+                    }
+                    const directCount = analytics.recentClicks.filter(
+                      c => c.referrer === 'direct' || c.referrer === ''
+                    ).length;
+                    const socialCount = analytics.recentClicks.filter(
+                      c => /instagram|tiktok|facebook|twitter|x\.com|pinterest|snapchat/i.test(c.referrer)
+                    ).length;
+                    const searchCount = total - directCount - socialCount;
+                    const pct = (n: number) => Math.round((n / total) * 100);
+                    return (
+                      <>
+                        <div className="flex justify-between font-bold">
+                          <span>Direct / Browser Link</span>
+                          <span className="font-black text-[#FF6B6B]">{pct(directCount)}%</span>
+                        </div>
+                        <div className="flex justify-between font-bold">
+                          <span>Social Media &amp; Mobile Apps</span>
+                          <span className="font-black text-[#4ECDC4]">{pct(socialCount)}%</span>
+                        </div>
+                        <div className="flex justify-between font-bold">
+                          <span>Search &amp; Referral</span>
+                          <span className="font-black text-[#2D3436]">{pct(searchCount)}%</span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
               <div className="pt-4 mt-4 border-t-2 border-[#2D3436]/10 text-[11px] text-[#2D3436]/60 font-bold">

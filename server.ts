@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import helmet from 'helmet';
+import jwt from 'jsonwebtoken';
 import { createServer as createViteServer } from 'vite';
 import { Product, ClickEvent, ConversionEvent, AnalyticsSummary } from './src/types';
 import { store, migrateFromJsonIfNeeded } from './db';
@@ -14,28 +15,78 @@ const PORT = Number.isInteger(configuredPort) && configuredPort > 0 ? configured
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 // Trust the first proxy hop (Cloud Run / Render / Railway / nginx, etc.) so
-// req.ip reflects the real client IP instead of the proxy's IP. Needed for
-// rate limiting and visitor-hash uniqueness to work correctly behind a proxy.
+// req.ip reflects the real client IP instead of the proxy's IP.
 app.set('trust proxy', 1);
 
-// 12mb is enough for a compressed product photo as base64; the old 50mb
-// limit applied to EVERY route (not just uploads) and was an easy memory-
-// exhaustion DoS vector.
 app.use(express.json({ limit: '12mb' }));
 app.use(express.urlencoded({ extended: true, limit: '12mb' }));
 
-// ================= OWNER AUTH =================
-// The Owner Control Hub (add/edit/delete products, image upload, analytics
-// reset) previously had NO server-side protection at all -- anyone who
-// discovered the API routes (not just the #admin URL) could modify the
-// storefront or wipe analytics. Set OWNER_KEY in the environment before
-// starting the server; protected routes fail closed when it is missing.
-const OWNER_KEY = process.env.OWNER_KEY?.trim() || '';
+// =============================================================================
+// JWT AUTH (replaces single shared OWNER_KEY)
+// =============================================================================
+// JWT_SECRET is used to sign and verify JSON Web Tokens. Must be set in
+// production. Defaults to a random per-process secret in development (which
+// means tokens are invalidated on restart — acceptable for local dev).
+const JWT_SECRET = process.env.JWT_SECRET?.trim() || (IS_PRODUCTION
+  ? (() => { throw new Error('JWT_SECRET must be set in production.'); })()
+  : crypto.randomBytes(32).toString('hex')
+);
 
-if (IS_PRODUCTION && !OWNER_KEY) {
-  throw new Error('OWNER_KEY must be set before starting in production.');
+// Token lifetime: 8 hours by default. Override via JWT_EXPIRY env var.
+const JWT_EXPIRY = process.env.JWT_EXPIRY || '8h';
+
+// On first boot with no users, create a default admin account from env vars.
+// OWNER_USER / OWNER_PASS are consumed only once (on first boot) and can be
+// removed from the environment afterward.
+function bootstrapDefaultUser() {
+  if (store.countUsers() === 0) {
+    const username = process.env.OWNER_USER?.trim() || 'admin';
+    const password = process.env.OWNER_PASS?.trim();
+    if (!password) {
+      if (IS_PRODUCTION) {
+        throw new Error(
+          'No users exist and OWNER_PASS is not set. Set OWNER_PASS to create the initial admin account.'
+        );
+      }
+      // Dev fallback: create a known default and print a warning.
+      const devPass = 'changeme';
+      store.createUser(username, devPass, 'owner');
+      console.warn(`[AUTH] No users found. Created default dev account: ${username} / ${devPass}`);
+      console.warn('[AUTH] Set OWNER_USER and OWNER_PASS env vars to change this before deploying.');
+    } else {
+      store.createUser(username, password, 'owner');
+      console.info(`[AUTH] Created initial admin account: ${username}`);
+    }
+  }
 }
 
+function signToken(userId: string, role: string): string {
+  return jwt.sign({ sub: userId, role }, JWT_SECRET, { expiresIn: JWT_EXPIRY as any });
+}
+
+function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) {
+    return sendError(res, 401, 'Authorization header with Bearer token required.');
+  }
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
+    res.locals.userId = payload.sub;
+    res.locals.userRole = payload.role;
+    next();
+  } catch {
+    return sendError(res, 401, 'Invalid or expired token. Please log in again.');
+  }
+}
+
+// Keep OWNER_KEY support as a legacy fallback so existing integrations
+// continue to work. Prefer JWT for new sessions.
+const LEGACY_OWNER_KEY = process.env.OWNER_KEY?.trim() || '';
+
+// =============================================================================
+// SECURITY MIDDLEWARE
+// =============================================================================
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -66,22 +117,9 @@ function sendError(res: express.Response, status: number, error: string) {
   return res.status(status).json({ error, correlationId: res.locals.correlationId });
 }
 
-function requireOwnerAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  if (!OWNER_KEY) {
-    return sendError(res, 503, 'Owner authentication is not configured.');
-  }
-  const providedKey = req.headers['x-owner-key'];
-  if (providedKey && providedKey === OWNER_KEY) {
-    return next();
-  }
-  return sendError(res, 401, 'Unauthorized. Provide a valid x-owner-key header.');
-}
-
-// ================= LIGHTWEIGHT RATE LIMITING =================
-// A minimal in-memory sliding-window limiter. Not a substitute for a real
-// rate limiter (e.g. behind multiple server instances the counts reset per
-// instance), but it stops trivial single-process click-fraud / upload-spam
-// scripts without adding a new dependency.
+// =============================================================================
+// LIGHTWEIGHT RATE LIMITING
+// =============================================================================
 function createRateLimiter(windowMs: number, max: number) {
   const hits = new Map<string, number[]>();
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -97,23 +135,29 @@ function createRateLimiter(windowMs: number, max: number) {
   };
 }
 
-const redirectLimiter = createRateLimiter(60_000, 60); // 60 redirects/min/IP
-const uploadLimiter = createRateLimiter(60_000, 20); // 20 uploads/min/IP
-const trackLimiter = createRateLimiter(60_000, 120); // 120 beacon calls/min/IP
-const ownerVerifyLimiter = createRateLimiter(60_000, 5); // 5 owner-key attempts/min/IP
+const redirectLimiter  = createRateLimiter(60_000, 60);   // 60 redirects/min/IP
+const uploadLimiter    = createRateLimiter(60_000, 20);   // 20 uploads/min/IP
+const trackLimiter     = createRateLimiter(60_000, 120);  // 120 beacon calls/min/IP
+const loginLimiter     = createRateLimiter(60_000, 5);    // 5 login attempts/min/IP
+const webhookLimiter   = createRateLimiter(60_000, 30);   // 30 webhook calls/min/IP
 
-const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(process.cwd(), 'data'));
+// =============================================================================
+// PERSISTENT STORAGE DIRECTORIES
+// =============================================================================
+const DATA_DIR    = path.resolve(process.env.DATA_DIR    || path.join(process.cwd(), 'data'));
 const UPLOADS_DIR = path.resolve(process.env.UPLOADS_DIR || path.join(process.cwd(), 'public', 'uploads'));
 
 try {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(DATA_DIR,    { recursive: true });
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 } catch {
   throw new Error('Persistent storage directories could not be created. Check DATA_DIR and UPLOADS_DIR.');
 }
 app.use('/uploads', express.static(UPLOADS_DIR));
 
-// Build URL ensuring direct affiliate links and tracking parameters
+// =============================================================================
+// AFFILIATE LINK BUILDER
+// =============================================================================
 export function buildAffiliateRedirectUrl(
   product: Product,
   params: { utm_source?: string; utm_medium?: string; utm_campaign?: string; subid?: string } = {}
@@ -122,50 +166,87 @@ export function buildAffiliateRedirectUrl(
     const rawUrl = (product.affiliateUrl || '').trim();
     if (!rawUrl) return 'https://www.amazon.com';
 
-    // Direct Amazon short links (amzn.to/xxx) or custom affiliate links should NOT be modified
+    // amzn.to short links already embed the affiliate tag — pass through unchanged.
     if (rawUrl.includes('amzn.to/')) {
       return rawUrl;
     }
 
     const urlObj = new URL(rawUrl);
 
-    // If user provided an affiliate link that already has tag in query, keep it intact!
+    // If the user already has a `tag` param in the URL, keep it intact.
     if (urlObj.searchParams.has('tag')) {
       return urlObj.toString();
     }
 
-    // Apply platform specific affiliate tag if configured
     const tag = product.affiliateTag || 'raccoonhub-20';
     urlObj.searchParams.set('tag', tag);
 
-    // Apply UTM tracking
-    if (params.utm_source) urlObj.searchParams.set('utm_source', params.utm_source);
-    if (params.utm_medium) urlObj.searchParams.set('utm_medium', params.utm_medium);
+    if (params.utm_source)   urlObj.searchParams.set('utm_source',   params.utm_source);
+    if (params.utm_medium)   urlObj.searchParams.set('utm_medium',   params.utm_medium);
     if (params.utm_campaign) urlObj.searchParams.set('utm_campaign', params.utm_campaign);
     if (params.subid || product.customSubId) {
       urlObj.searchParams.set('subid', params.subid || product.customSubId || 'raccoonhub');
     }
 
     return urlObj.toString();
-  } catch (err) {
+  } catch {
     return product.affiliateUrl || 'https://www.amazon.com';
   }
 }
 
-// Allowlist of accepted image types. SVG is deliberately excluded: an SVG
-// can carry inline <script>, which becomes stored XSS the moment anyone
-// (e.g. the owner) opens the uploaded file directly in a browser tab.
+// =============================================================================
+// IMAGE UPLOAD — type allowlist + MAGIC BYTES validation (② + ⑧)
+// =============================================================================
+// SVG is excluded: inline <script> in SVG = stored XSS.
 const ALLOWED_UPLOAD_TYPES: Record<string, string> = {
   jpeg: 'jpg',
-  jpg: 'jpg',
-  png: 'png',
-  gif: 'gif',
+  jpg:  'jpg',
+  png:  'png',
+  gif:  'gif',
   webp: 'webp',
 };
-const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8mb decoded
 
-// Upload image from device storage (receives base64 dataUrl, stores in /public/uploads/, returns URL)
-app.post('/api/upload', requireOwnerAuth, uploadLimiter, (req, res) => {
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MB decoded
+
+/**
+ * Validate the actual file content magic bytes (file signature) against the
+ * MIME type declared in the data URL prefix. This prevents a caller from
+ * renaming a PHP/HTML/EXE file as image.png and uploading it.
+ */
+function validateMagicBytes(buffer: Buffer, declaredExt: string): boolean {
+  // JPEG: FF D8 FF
+  if (declaredExt === 'jpg') {
+    return buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF;
+  }
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (declaredExt === 'png') {
+    return (
+      buffer[0] === 0x89 && buffer[1] === 0x50 &&
+      buffer[2] === 0x4E && buffer[3] === 0x47 &&
+      buffer[4] === 0x0D && buffer[5] === 0x0A &&
+      buffer[6] === 0x1A && buffer[7] === 0x0A
+    );
+  }
+  // GIF: 47 49 46 38 (GIF8)
+  if (declaredExt === 'gif') {
+    return (
+      buffer[0] === 0x47 && buffer[1] === 0x49 &&
+      buffer[2] === 0x46 && buffer[3] === 0x38
+    );
+  }
+  // WEBP: 52 49 46 46 (RIFF) at 0..3, then 57 45 42 50 (WEBP) at 8..11
+  if (declaredExt === 'webp') {
+    return (
+      buffer[0] === 0x52 && buffer[1] === 0x49 &&
+      buffer[2] === 0x46 && buffer[3] === 0x46 &&
+      buffer[8] === 0x57 && buffer[9] === 0x45 &&
+      buffer[10] === 0x42 && buffer[11] === 0x50
+    );
+  }
+  return false;
+}
+
+app.post('/api/upload', requireAuth, uploadLimiter, (req, res) => {
   try {
     const { dataUrl, filename } = req.body;
     if (!dataUrl || typeof dataUrl !== 'string') {
@@ -189,6 +270,11 @@ app.post('/api/upload', requireOwnerAuth, uploadLimiter, (req, res) => {
       return sendError(res, 413, `Image too large. Max size is ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB.`);
     }
 
+    // ⑧ Magic-bytes check: ensure actual file content matches declared MIME type.
+    if (!validateMagicBytes(buffer, ext)) {
+      return sendError(res, 400, 'File content does not match the declared image type. Upload aborted.');
+    }
+
     const cleanName = filename
       ? filename.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 30)
       : 'device-photo';
@@ -199,17 +285,18 @@ app.post('/api/upload', requireOwnerAuth, uploadLimiter, (req, res) => {
     const publicUrl = `/uploads/${uniqueName}`;
 
     res.json({ imageUrl: publicUrl, success: true });
-  } catch (err: any) {
+  } catch {
     console.error('Image upload failed');
     sendError(res, 500, 'Failed to process and store image upload');
   }
 });
 
-// Builds a stable-but-anonymous per-day fingerprint from IP + User-Agent so
-// we can count unique clickers without storing raw IPs or using cookies.
+// =============================================================================
+// HELPERS
+// =============================================================================
 function getVisitorHash(req: express.Request): string {
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  const ua = req.headers['user-agent'] || 'unknown';
+  const ip  = req.ip || req.socket.remoteAddress || 'unknown';
+  const ua  = req.headers['user-agent'] || 'unknown';
   const day = new Date().toISOString().split('T')[0];
   return crypto.createHash('sha256').update(`${ip}|${ua}|${day}`).digest('hex').slice(0, 16);
 }
@@ -231,26 +318,96 @@ function normalizeReferrer(value: unknown): string {
   }
 }
 
-// Boot persistence: open the SQLite database and, on a fresh install, import
-// any historical data that still lives in the legacy JSON files.
+// Validate that a platform value is Amazon (the only supported platform).
+function validatePlatform(platform: unknown): 'Amazon' {
+  if (platform && platform !== 'Amazon') {
+    throw Object.assign(new Error('Only Amazon platform is supported.'), { statusCode: 400 });
+  }
+  return 'Amazon';
+}
+
+// =============================================================================
+// BOOT — migrate legacy JSON → SQLite, create default user
+// =============================================================================
 const migration = migrateFromJsonIfNeeded();
 if (migration.migrated) {
   console.info(
     `Migrated legacy JSON data into SQLite (${migration.counts.products} products, ` +
-      `${migration.counts.clicks} clicks, ${migration.counts.conversions} conversions).`
+    `${migration.counts.clicks} clicks, ${migration.counts.conversions} conversions).`
   );
 }
 
-// ================= API ENDPOINTS =================
+bootstrapDefaultUser();
+
+// =============================================================================
+// ⑦ DATA RETENTION — purge click records older than CLICK_RETENTION_DAYS
+// =============================================================================
+const CLICK_RETENTION_DAYS = Math.max(1, parseInt(process.env.CLICK_RETENTION_DAYS || '90', 10));
+
+function runRetentionPurge() {
+  const deleted = store.deleteClicksOlderThan(CLICK_RETENTION_DAYS);
+  if (deleted > 0) {
+    console.info(`[Retention] Purged ${deleted} click record(s) older than ${CLICK_RETENTION_DAYS} days.`);
+  }
+}
+
+// Run once at startup and then every 24 hours.
+runRetentionPurge();
+setInterval(runRetentionPurge, 24 * 60 * 60 * 1000);
+
+// =============================================================================
+// API ENDPOINTS
+// =============================================================================
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString(), productCount: store.listProducts().length });
 });
 
-// Verify an owner key from the client-side login gate.
-app.post('/api/owner/verify', ownerVerifyLimiter, requireOwnerAuth, (req, res) => {
-  res.json({ success: true, protected: Boolean(OWNER_KEY) });
+// ---- ④ AUTHENTICATION ----
+
+// POST /api/auth/login — exchange username+password for a JWT
+app.post('/api/auth/login', loginLimiter, (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password || typeof username !== 'string' || typeof password !== 'string') {
+    return sendError(res, 400, 'username and password are required.');
+  }
+
+  const user = store.getUserByUsername(username.trim());
+  if (!user || !store.verifyPassword(password, user.passwordHash, user.salt)) {
+    return sendError(res, 401, 'Invalid username or password.');
+  }
+
+  const token = signToken(user.id, user.role);
+  res.json({ token, username: user.username, role: user.role, expiresIn: JWT_EXPIRY });
+});
+
+// GET /api/auth/me — return the currently authenticated user
+app.get('/api/auth/me', requireAuth, (req, res) => {
+  const user = store.getUserById(res.locals.userId);
+  if (!user) return sendError(res, 404, 'User not found.');
+  res.json({ id: user.id, username: user.username, role: user.role });
+});
+
+// Legacy passcode verify — kept for backwards compatibility with old clients.
+// New clients should use POST /api/auth/login instead.
+app.post('/api/owner/verify', loginLimiter, (req, res) => {
+  // Accept either JWT (Authorization header) or legacy x-owner-key header.
+  const authHeader = req.headers['authorization'];
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (bearerToken) {
+    try {
+      jwt.verify(bearerToken, JWT_SECRET);
+      return res.json({ success: true });
+    } catch {
+      return sendError(res, 401, 'Invalid or expired token.');
+    }
+  }
+  const legacyKey = req.headers['x-owner-key'];
+  if (LEGACY_OWNER_KEY && legacyKey === LEGACY_OWNER_KEY) {
+    return res.json({ success: true, protected: true });
+  }
+  return sendError(res, 401, 'Unauthorized. Provide a valid Bearer token or x-owner-key header.');
 });
 
 // GET all products
@@ -293,8 +450,8 @@ app.get('/api/products/:id', (req, res) => {
   res.json(product);
 });
 
-// POST add product
-app.post('/api/products', requireOwnerAuth, (req, res) => {
+// POST add product — ② Amazon-only platform validation
+app.post('/api/products', requireAuth, (req, res) => {
   const {
     title,
     description,
@@ -314,6 +471,13 @@ app.post('/api/products', requireOwnerAuth, (req, res) => {
     return sendError(res, 400, 'Title and affiliate URL are required.');
   }
 
+  let validatedPlatform: 'Amazon';
+  try {
+    validatedPlatform = validatePlatform(platform);
+  } catch (e: any) {
+    return sendError(res, 400, e.message);
+  }
+
   const newProduct: Product = {
     id: `prod-${Date.now()}`,
     title: String(title).trim(),
@@ -322,7 +486,7 @@ app.post('/api/products', requireOwnerAuth, (req, res) => {
     rating: parseFloat(rating) || 5.0,
     reviewCount: parseInt(reviewCount, 10) || 1,
     imageUrl: String(imageUrl || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=80').trim(),
-    platform: platform || 'Amazon',
+    platform: validatedPlatform,
     affiliateUrl: String(affiliateUrl).trim(),
     affiliateTag: affiliateTag ? String(affiliateTag).trim() : 'raccoonhub-20',
     customSubId: customSubId ? String(customSubId).trim() : undefined,
@@ -332,22 +496,18 @@ app.post('/api/products', requireOwnerAuth, (req, res) => {
   };
 
   store.createProduct(newProduct);
-
   res.status(201).json(newProduct);
 });
 
-// Fields an owner is allowed to change via PUT. Using an explicit allowlist
-// (instead of spreading the whole request body onto the stored record)
-// stops a caller from injecting unexpected fields, and keeps the same
-// type-coercion / validation the POST route applies.
+// Explicit allowlist of updatable product fields.
 const UPDATABLE_PRODUCT_FIELDS = [
   'title', 'description', 'category', 'rating',
   'reviewCount', 'imageUrl', 'platform', 'affiliateUrl', 'affiliateTag',
   'customSubId', 'badge', 'featured',
 ] as const;
 
-// PUT update product
-app.put('/api/products/:id', requireOwnerAuth, (req, res) => {
+// PUT update product — ② Amazon-only platform validation
+app.put('/api/products/:id', requireAuth, (req, res) => {
   const existing = store.getProduct(req.params.id);
   if (!existing) {
     return sendError(res, 404, 'Product not found');
@@ -359,10 +519,9 @@ app.put('/api/products/:id', requireOwnerAuth, (req, res) => {
   for (const field of UPDATABLE_PRODUCT_FIELDS) {
     if (!(field in body)) continue;
     switch (field) {
-      case 'rating':
-      {
+      case 'rating': {
         const num = parseFloat(body[field]);
-        if (!Number.isNaN(num)) (updated as any)[field] = num;
+        if (!Number.isNaN(num)) updated.rating = num;
         break;
       }
       case 'reviewCount': {
@@ -373,6 +532,15 @@ app.put('/api/products/:id', requireOwnerAuth, (req, res) => {
       case 'featured':
         updated.featured = Boolean(body.featured);
         break;
+      case 'platform': {
+        // ② Enforce Amazon-only platform
+        try {
+          updated.platform = validatePlatform(body.platform);
+        } catch (e: any) {
+          return sendError(res, 400, e.message);
+        }
+        break;
+      }
       default:
         (updated as any)[field] = typeof body[field] === 'string' ? body[field].trim() : body[field];
     }
@@ -380,12 +548,11 @@ app.put('/api/products/:id', requireOwnerAuth, (req, res) => {
   updated.id = existing.id; // id is never overridable
 
   store.updateProduct(updated);
-
   res.json(updated);
 });
 
 // DELETE product
-app.delete('/api/products/:id', requireOwnerAuth, (req, res) => {
+app.delete('/api/products/:id', requireAuth, (req, res) => {
   const deleted = store.deleteProduct(req.params.id);
   if (!deleted) {
     return sendError(res, 404, 'Product not found');
@@ -394,7 +561,6 @@ app.delete('/api/products/:id', requireOwnerAuth, (req, res) => {
 });
 
 // REDIRECT ENDPOINT: /api/redirect/:id or /r/:id
-// Seamlessly logs click and redirects user to target affiliate URL
 app.get(['/api/redirect/:id', '/r/:id'], redirectLimiter, (req, res) => {
   const product = store.getProduct(req.params.id);
   if (!product) {
@@ -405,14 +571,14 @@ app.get(['/api/redirect/:id', '/r/:id'], redirectLimiter, (req, res) => {
   const referrerHeader = req.headers['referer'] || req.query.ref || 'direct';
   const referrer = typeof referrerHeader === 'string' ? referrerHeader : 'direct';
 
-  const utmSource = (req.query.utm_source as string) || (referrer.includes('tiktok') ? 'tiktok' : referrer.includes('instagram') ? 'instagram' : 'raccoonhub');
-  const utmMedium = (req.query.utm_medium as string) || 'affiliate_redirect';
+  const utmSource   = (req.query.utm_source   as string) || (referrer.includes('tiktok') ? 'tiktok' : referrer.includes('instagram') ? 'instagram' : 'raccoonhub');
+  const utmMedium   = (req.query.utm_medium   as string) || 'affiliate_redirect';
   const utmCampaign = (req.query.utm_campaign as string) || 'curated_finds';
-  const subid = (req.query.subid as string) || product.customSubId || 'raccoonhub';
+  const subid       = (req.query.subid        as string) || product.customSubId || 'raccoonhub';
 
   const finalUrl = buildAffiliateRedirectUrl(product, {
-    utm_source: utmSource,
-    utm_medium: utmMedium,
+    utm_source:   utmSource,
+    utm_medium:   utmMedium,
     utm_campaign: utmCampaign,
     subid,
   });
@@ -435,20 +601,14 @@ app.get(['/api/redirect/:id', '/r/:id'], redirectLimiter, (req, res) => {
 
   store.createClick(clickEvent);
 
-  // If request expects JSON (for client-side open in new tab with stats)
   if (req.query.format === 'json') {
-    return res.json({
-      success: true,
-      clickId: clickEvent.id,
-      destinationUrl: finalUrl,
-    });
+    return res.json({ success: true, clickId: clickEvent.id, destinationUrl: finalUrl });
   }
 
-  // HTTP 302 standard redirect directly to affiliate destination
   res.redirect(302, finalUrl);
 });
 
-// CLIENT TRACKING BEACON: /api/track/click
+// CLIENT TRACKING BEACON
 app.post('/api/track/click', trackLimiter, (req, res) => {
   const { productId, utmSource, utmMedium, utmCampaign, subid, referrer } = req.body;
   const product = store.getProduct(productId);
@@ -459,10 +619,10 @@ app.post('/api/track/click', trackLimiter, (req, res) => {
 
   const userAgent = req.headers['user-agent'] || '';
   const finalUrl = buildAffiliateRedirectUrl(product, {
-    utm_source: utmSource || 'storefront',
-    utm_medium: utmMedium || 'affiliate_card',
+    utm_source:   utmSource   || 'storefront',
+    utm_medium:   utmMedium   || 'affiliate_card',
     utm_campaign: utmCampaign || 'viral_curation',
-    subid: subid || product.customSubId,
+    subid:        subid || product.customSubId,
   });
 
   const clickEvent: ClickEvent = {
@@ -474,8 +634,8 @@ app.post('/api/track/click', trackLimiter, (req, res) => {
     timestamp: new Date().toISOString(),
     referrer: normalizeReferrer(referrer),
     device: parseDevice(userAgent),
-    utmSource: utmSource || 'storefront',
-    utmMedium: utmMedium || 'affiliate_card',
+    utmSource:   utmSource   || 'storefront',
+    utmMedium:   utmMedium   || 'affiliate_card',
     utmCampaign: utmCampaign || 'viral_curation',
     destinationUrl: finalUrl,
     visitorHash: getVisitorHash(req),
@@ -483,15 +643,11 @@ app.post('/api/track/click', trackLimiter, (req, res) => {
 
   store.createClick(clickEvent);
 
-  res.json({
-    success: true,
-    clickId: clickEvent.id,
-    destinationUrl: finalUrl,
-  });
+  res.json({ success: true, clickId: clickEvent.id, destinationUrl: finalUrl });
 });
 
-// RECORD CONVERSION (Simulation / affiliate callback)
-app.post('/api/analytics/conversion', requireOwnerAuth, (req, res) => {
+// MANUAL CONVERSION RECORD (owner-initiated)
+app.post('/api/analytics/conversion', requireAuth, (req, res) => {
   const { productId, clickId } = req.body;
   const product = store.getProduct(productId);
 
@@ -509,32 +665,99 @@ app.post('/api/analytics/conversion', requireOwnerAuth, (req, res) => {
   };
 
   store.createConversion(convEvent);
-
   res.status(201).json(convEvent);
 });
 
+// =============================================================================
+// ⑥ CONVERSION WEBHOOK — accepts signed payloads from affiliate networks
+// =============================================================================
+// Verifies X-Webhook-Signature (HMAC-SHA256 of the raw request body using
+// WEBHOOK_SECRET). Compatible with Impact, CJ Affiliate, ShareASale, and any
+// affiliate network that supports outgoing HMAC-signed webhooks.
+//
+// Amazon Associates does not provide real-time webhooks natively; record
+// conversions manually via POST /api/analytics/conversion instead.
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET?.trim() || '';
+
+app.post('/api/webhooks/conversion', webhookLimiter, express.raw({ type: 'application/json', limit: '1mb' }), (req, res) => {
+  if (!WEBHOOK_SECRET) {
+    return sendError(res, 503, 'Webhook endpoint is not configured (WEBHOOK_SECRET not set).');
+  }
+
+  const signature = req.headers['x-webhook-signature'] as string;
+  if (!signature) {
+    return sendError(res, 400, 'Missing X-Webhook-Signature header.');
+  }
+
+  // Compute HMAC-SHA256 of the raw body using the shared secret.
+  const expectedSig = crypto
+    .createHmac('sha256', WEBHOOK_SECRET)
+    .update(req.body)
+    .digest('hex');
+
+  const sigBuffer  = Buffer.from(signature.replace(/^sha256=/, ''), 'hex');
+  const expectedBuf = Buffer.from(expectedSig, 'hex');
+
+  if (sigBuffer.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuffer, expectedBuf)) {
+    return sendError(res, 401, 'Invalid webhook signature.');
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(req.body.toString('utf-8'));
+  } catch {
+    return sendError(res, 400, 'Invalid JSON payload.');
+  }
+
+  // Map the generic payload to a ConversionEvent. Networks vary in field names;
+  // common fields are listed here — extend as needed for your network.
+  const productId   = String(payload.productId   || payload.product_id   || '');
+  const clickId     = String(payload.clickId     || payload.click_id     || payload.transaction_id || '');
+  const productTitle = String(payload.productTitle || payload.product_title || 'Unknown Product');
+  const platform    = 'Amazon';
+
+  if (!productId) {
+    return sendError(res, 400, 'Webhook payload must include productId.');
+  }
+
+  const convEvent: ConversionEvent = {
+    id: `conv-webhook-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`,
+    clickId: clickId || undefined,
+    productId,
+    productTitle,
+    timestamp: new Date().toISOString(),
+    platform,
+  };
+
+  store.createConversion(convEvent);
+  console.info(`[Webhook] Recorded conversion for product ${productId}`);
+  res.status(201).json({ success: true, conversionId: convEvent.id });
+});
+
+// =============================================================================
+// ANALYTICS
+// =============================================================================
 function getClicksToday(): number {
   const todayStr = new Date().toISOString().split('T')[0];
   return store.listClicks().filter(c => c.timestamp.startsWith(todayStr)).length;
 }
 
-// Public analytics are limited to a non-identifying aggregate.
+// Public analytics — aggregate only, no PII.
 app.get('/api/analytics/public', (req, res) => {
   res.json({ clicksToday: getClicksToday() });
 });
 
-// GET ANALYTICS SUMMARY (owner-only because it contains click telemetry)
-app.get('/api/analytics', requireOwnerAuth, (req, res) => {
-  const clicks = store.listClicks();
+// Full analytics — owner-only.
+app.get('/api/analytics', requireAuth, (req, res) => {
+  const clicks      = store.listClicks();
   const conversions = store.listConversions();
-  const products = store.listProducts();
+  const products    = store.listProducts();
 
-  const totalClicks = store.countTotalClicks();
-  const uniqueVisitors = store.countDistinctVisitors();
+  const totalClicks      = store.countTotalClicks();
+  const uniqueVisitors   = store.countDistinctVisitors();
   const totalConversions = store.countTotalConversions();
-  const conversionRate = totalClicks > 0 ? Number(((totalConversions / totalClicks) * 100).toFixed(1)) : 0;
-
-  const clicksToday = getClicksToday();
+  const conversionRate   = totalClicks > 0 ? Number(((totalConversions / totalClicks) * 100).toFixed(1)) : 0;
+  const clicksToday      = getClicksToday();
 
   // Clicks by day (last 14 days)
   const daysMap = new Map<string, { clicks: number; conversions: number }>();
@@ -545,19 +768,13 @@ app.get('/api/analytics', requireOwnerAuth, (req, res) => {
   }
 
   clicks.forEach(c => {
-    const d = new Date(c.timestamp);
-    const dateKey = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    if (daysMap.has(dateKey)) {
-      daysMap.get(dateKey)!.clicks += 1;
-    }
+    const dateKey = new Date(c.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    if (daysMap.has(dateKey)) daysMap.get(dateKey)!.clicks += 1;
   });
 
   conversions.forEach(c => {
-    const d = new Date(c.timestamp);
-    const dateKey = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    if (daysMap.has(dateKey)) {
-      daysMap.get(dateKey)!.conversions += 1;
-    }
+    const dateKey = new Date(c.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    if (daysMap.has(dateKey)) daysMap.get(dateKey)!.conversions += 1;
   });
 
   const clicksByDay = Array.from(daysMap.entries()).map(([date, data]) => ({
@@ -569,15 +786,14 @@ app.get('/api/analytics', requireOwnerAuth, (req, res) => {
   // Top products
   const productClickMap = new Map<string, { clicks: number; conversions: number }>();
   clicks.forEach(c => {
-    const existing = productClickMap.get(c.productId) || { clicks: 0, conversions: 0 };
-    existing.clicks += 1;
-    productClickMap.set(c.productId, existing);
+    const e = productClickMap.get(c.productId) || { clicks: 0, conversions: 0 };
+    e.clicks += 1;
+    productClickMap.set(c.productId, e);
   });
-
   conversions.forEach(c => {
-    const existing = productClickMap.get(c.productId) || { clicks: 0, conversions: 0 };
-    existing.conversions += 1;
-    productClickMap.set(c.productId, existing);
+    const e = productClickMap.get(c.productId) || { clicks: 0, conversions: 0 };
+    e.conversions += 1;
+    productClickMap.set(c.productId, e);
   });
 
   const topProducts = products
@@ -596,41 +812,18 @@ app.get('/api/analytics', requireOwnerAuth, (req, res) => {
     })
     .sort((a, b) => b.clicks - a.clicks);
 
-  // Platform breakdown
+  // Breakdowns
   const platformCounts: Record<string, number> = {};
+  const categoryCounts: Record<string, number> = {};
+  const deviceCounts:   Record<string, number> = {};
+
   clicks.forEach(c => {
     platformCounts[c.platform] = (platformCounts[c.platform] || 0) + 1;
-  });
-
-  const platformBreakdown = Object.entries(platformCounts).map(([platform, count]) => ({
-    platform,
-    clicks: count,
-    percentage: totalClicks > 0 ? Number(((count / totalClicks) * 100).toFixed(1)) : 0,
-  }));
-
-  // Category breakdown
-  const categoryCounts: Record<string, number> = {};
-  clicks.forEach(c => {
     categoryCounts[c.category] = (categoryCounts[c.category] || 0) + 1;
+    deviceCounts[c.device]     = (deviceCounts[c.device]     || 0) + 1;
   });
 
-  const categoryBreakdown = Object.entries(categoryCounts).map(([category, count]) => ({
-    category,
-    clicks: count,
-    percentage: totalClicks > 0 ? Number(((count / totalClicks) * 100).toFixed(1)) : 0,
-  }));
-
-  // Device breakdown
-  const deviceCounts: Record<string, number> = {};
-  clicks.forEach(c => {
-    deviceCounts[c.device] = (deviceCounts[c.device] || 0) + 1;
-  });
-
-  const deviceBreakdown = Object.entries(deviceCounts).map(([device, count]) => ({
-    device,
-    clicks: count,
-    percentage: totalClicks > 0 ? Number(((count / totalClicks) * 100).toFixed(1)) : 0,
-  }));
+  const toPct = (n: number) => totalClicks > 0 ? Number(((n / totalClicks) * 100).toFixed(1)) : 0;
 
   const summary: AnalyticsSummary = {
     totalClicks,
@@ -640,22 +833,25 @@ app.get('/api/analytics', requireOwnerAuth, (req, res) => {
     clicksToday,
     topProducts,
     clicksByDay,
-    platformBreakdown,
-    categoryBreakdown,
-    deviceBreakdown,
+    platformBreakdown: Object.entries(platformCounts).map(([platform, count]) => ({ platform, clicks: count, percentage: toPct(count) })),
+    categoryBreakdown: Object.entries(categoryCounts).map(([category, count]) => ({ category, clicks: count, percentage: toPct(count) })),
+    deviceBreakdown:   Object.entries(deviceCounts).map(([device,   count]) => ({ device,   clicks: count, percentage: toPct(count) })),
     recentClicks: store.recentClicks(50).map(({ visitorHash, ...click }) => click),
   };
 
   res.json(summary);
 });
 
-// RESET OR RESEED ANALYTICS
-app.post('/api/analytics/reset', requireOwnerAuth, (req, res) => {
+// RESET ANALYTICS
+app.post('/api/analytics/reset', requireAuth, (req, res) => {
   store.deleteAllClicks();
   store.deleteAllConversions();
   res.json({ success: true, message: 'Analytics reset to empty live data' });
 });
 
+// =============================================================================
+// GLOBAL ERROR HANDLER
+// =============================================================================
 app.use((err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (res.headersSent) return next(err);
   const message = err instanceof Error ? err.message : 'Unknown server error';
@@ -663,8 +859,9 @@ app.use((err: unknown, req: express.Request, res: express.Response, next: expres
   return sendError(res, 500, 'An unexpected server error occurred.');
 });
 
-// ================= VITE INTEGRATION =================
-
+// =============================================================================
+// VITE INTEGRATION
+// =============================================================================
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -681,7 +878,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.info(`SillyFinds affiliate server running on http://localhost:${PORT}`);
+    console.info(`Raccoon Hub server running on http://localhost:${PORT}`);
   });
 }
 

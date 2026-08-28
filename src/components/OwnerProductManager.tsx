@@ -11,8 +11,6 @@ import {
   Filter,
   LayoutList,
   LayoutGrid,
-  ExternalLink,
-  ShieldCheck,
 } from 'lucide-react';
 import { Product } from '../types';
 import { api } from '../services/api';
@@ -218,7 +216,7 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
                     src={p.imageUrl}
                     alt={p.title}
                     referrerPolicy="no-referrer"
-                    className="w-18 h-18 sm:w-20 sm:h-20 rounded-xl object-cover border-2 border-[#2D3436] bg-white shrink-0 shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]"
+                    className="w-20 h-20 rounded-xl object-cover border-2 border-[#2D3436] bg-white shrink-0 shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]"
                     onError={e => {
                       (e.target as HTMLImageElement).src =
                         'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=800&auto=format&fit=crop&q=80';
@@ -308,7 +306,7 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
                     src={p.imageUrl}
                     alt={p.title}
                     referrerPolicy="no-referrer"
-                    className="w-18 h-18 sm:w-22 sm:h-22 rounded-2xl object-cover border-2 border-[#2D3436] bg-white shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]"
+                    className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover border-2 border-[#2D3436] bg-white shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]"
                     onError={e => {
                       (e.target as HTMLImageElement).src =
                         'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=800&auto=format&fit=crop&q=80';

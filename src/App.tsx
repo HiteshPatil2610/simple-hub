@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, Flame, ArrowUpDown, ShoppingBag, LayoutDashboard, BarChart3, Plus, Package } from 'lucide-react';
 import { Product, AnalyticsSummary, ViewMode } from './types';
-import { api, getOwnerKey, clearOwnerKey } from './services/api';
+import { api, getAuthToken, clearAuthToken } from './services/api';
 import { Navbar } from './components/Navbar';
 import { ProductCard } from './components/ProductCard';
 import { ProductDetailModal } from './components/ProductDetailModal';
@@ -67,18 +67,24 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleHash);
   }, []);
 
-  // Silently re-validate a previously-stored owner key so returning owners
+  // Silently re-validate a previously-stored JWT so returning owners
   // aren't re-prompted every visit, without ever trusting session storage alone.
   useEffect(() => {
-    const storedKey = getOwnerKey();
-    api
-      .verifyOwnerKey(storedKey)
-      .then(ok => {
-        if (ok) {
+    const token = getAuthToken();
+    if (!token) {
+      setIsCheckingOwnerAuth(false);
+      return;
+    }
+    // Verify the token with the server — if it's expired or tampered the
+    // server returns 401 and we clear the stale token.
+    fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => {
+        if (res.ok) {
           setIsOwnerAuthed(true);
           refreshAnalytics();
+        } else {
+          clearAuthToken();
         }
-        else clearOwnerKey();
       })
       .catch(() => {})
       .finally(() => setIsCheckingOwnerAuth(false));
@@ -253,7 +259,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      clearOwnerKey();
+                      clearAuthToken();
                       setIsOwnerAuthed(false);
                     }}
                     className="text-[10px] font-black uppercase tracking-wider text-[#2D3436]/60 hover:text-[#FF6B6B] underline"

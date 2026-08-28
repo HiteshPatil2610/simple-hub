@@ -6,7 +6,7 @@ export interface Product {
   rating: number;
   reviewCount: number;
   imageUrl: string;
-  platform: 'Amazon' | 'TikTok Shop' | 'AliExpress' | 'Etsy' | 'Other';
+  platform: 'Amazon';
   affiliateUrl: string;
   affiliateTag?: string;
   customSubId?: string;

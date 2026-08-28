@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { Lock, ShieldCheck } from 'lucide-react';
-import { api, setOwnerKey } from '../services/api';
+import { Lock, ShieldCheck, User } from 'lucide-react';
+import { api, setAuthToken } from '../services/api';
 
 interface OwnerGateProps {
   onUnlocked: () => void;
 }
 
-// Shown instead of the Owner Control Hub until a valid owner key is provided.
+// ④ Multi-user auth: shows username + password form instead of a single passcode.
 export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked }) => {
-  const [value, setValue] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isChecking, setIsChecking] = useState(false);
 
@@ -17,15 +18,11 @@ export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked }) => {
     setIsChecking(true);
     setError('');
     try {
-      const ok = await api.verifyOwnerKey(value.trim());
-      if (ok) {
-        setOwnerKey(value.trim());
-        onUnlocked();
-      } else {
-        setError('Incorrect passcode. Try again.');
-      }
-    } catch {
-      setError('Could not reach the server. Please try again.');
+      const { token } = await api.login(username.trim(), password);
+      setAuthToken(token);
+      onUnlocked();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reach the server. Please try again.');
     } finally {
       setIsChecking(false);
     }
@@ -39,26 +36,41 @@ export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked }) => {
         </div>
         <h2 className="text-xl font-black text-[#2D3436]">Owner Access Required</h2>
         <p className="text-xs sm:text-sm text-[#2D3436]/70 font-semibold mt-1.5 mb-5">
-          Enter the owner passcode to manage products and view click records.
+          Sign in to manage products and view click records.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-3 text-left">
-          <input
-            type="password"
-            autoFocus
-            value={value}
-            onChange={e => setValue(e.target.value)}
-            placeholder="Owner passcode"
-            className="w-full px-4 py-3 rounded-xl border-2 border-[#2D3436] font-bold text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
-          />
+          <div className="relative">
+            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#2D3436]/50 pointer-events-none" />
+            <input
+              type="text"
+              autoFocus
+              autoComplete="username"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              placeholder="Username"
+              className="w-full pl-9 pr-4 py-3 rounded-xl border-2 border-[#2D3436] font-bold text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
+            />
+          </div>
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#2D3436]/50 pointer-events-none" />
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="Password"
+              className="w-full pl-9 pr-4 py-3 rounded-xl border-2 border-[#2D3436] font-bold text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
+            />
+          </div>
           {error && <p className="text-xs font-bold text-[#FF6B6B]">{error}</p>}
           <button
             type="submit"
-            disabled={isChecking}
+            disabled={isChecking || !username || !password}
             className="w-full py-3 rounded-xl font-black text-xs uppercase tracking-wider bg-[#4ECDC4] hover:bg-[#3dbdb5] text-[#2D3436] border-2 border-[#2D3436] shadow-[3px_3px_0px_0px_rgba(45,52,54,1)] active:translate-y-0.5 active:shadow-none disabled:opacity-60 flex items-center justify-center gap-2"
           >
             <ShieldCheck className="w-4 h-4" />
-            {isChecking ? 'Checking...' : 'Unlock Owner Hub'}
+            {isChecking ? 'Signing in...' : 'Sign In to Owner Hub'}
           </button>
         </form>
       </div>
