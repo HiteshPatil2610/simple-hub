@@ -138,6 +138,18 @@ Open `http://localhost:3000`. Visit `http://localhost:3000/#admin` and enter you
 
 > ⚠️ `OWNER_KEY` must be set before starting the server. Protected routes fail closed when it is missing.
 
+In production, the server refuses to start when `OWNER_KEY` is missing. `PORT` is optional and defaults to `3000`.
+
+### Pre-deployment checklist
+
+- **Environment variables: PASS.** `OWNER_KEY` is required in production; `PORT` has a `3000` fallback. No database URL or third-party API key is used by this app.
+- **Debug code and test routes: PASS.** No debug mode, test-only endpoint, hardcoded test credential, TODO, or FIXME security marker is present. The startup message is operational only.
+- **Error handling: PASS.** Unexpected errors return a generic message and correlation ID; internal details are logged server-side only.
+- **Security headers: PASS.** Helmet supplies `nosniff`, `DENY`, one-year HSTS, and a same-origin CSP. External HTTPS images and local/WebSocket connections are explicitly allowed where required by the UI.
+- **Rate limiting: PASS.** Owner-key verification is limited to five attempts per minute per IP. Password reset, signup, and OTP routes do not exist.
+- **CORS: PASS.** No CORS middleware is enabled; browser API access is same-origin by default.
+- **Database security: NOT APPLICABLE.** The app uses local JSON files and has no database connection or exposed database port. Protect the host filesystem and persistent volume in deployment.
+
 ### Secret rotation warning
 
 The Owner Hub passcode was previously committed in `.env.example` in git history. Rotate that value immediately if it was used anywhere, and use a new `OWNER_KEY` in every deployed environment. Never commit `.env` or real credentials.

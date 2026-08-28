@@ -3,11 +3,14 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import helmet from 'helmet';
 import { createServer as createViteServer } from 'vite';
 import { Product, ClickEvent, ConversionEvent, AnalyticsSummary } from './src/types';
 
 const app = express();
-const PORT = 3000;
+const configuredPort = Number.parseInt(process.env.PORT || '3000', 10);
+const PORT = Number.isInteger(configuredPort) && configuredPort > 0 ? configuredPort : 3000;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 // Trust the first proxy hop (Cloud Run / Render / Railway / nginx, etc.) so
 // req.ip reflects the real client IP instead of the proxy's IP. Needed for
@@ -28,15 +31,49 @@ app.use(express.urlencoded({ extended: true, limit: '12mb' }));
 // starting the server; protected routes fail closed when it is missing.
 const OWNER_KEY = process.env.OWNER_KEY?.trim() || '';
 
+if (IS_PRODUCTION && !OWNER_KEY) {
+  throw new Error('OWNER_KEY must be set before starting in production.');
+}
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      baseUri: ["'self'"],
+      frameAncestors: ["'none'"],
+      objectSrc: ["'none'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'", 'ws:'],
+      fontSrc: ["'self'", 'data:'],
+    },
+  },
+  frameguard: { action: 'deny' },
+  hsts: { maxAge: 31_536_000, includeSubDomains: true },
+  noSniff: true,
+}));
+
+app.use((req, res, next) => {
+  const correlationId = crypto.randomUUID();
+  res.locals.correlationId = correlationId;
+  res.setHeader('X-Correlation-ID', correlationId);
+  next();
+});
+
+function sendError(res: express.Response, status: number, error: string) {
+  return res.status(status).json({ error, correlationId: res.locals.correlationId });
+}
+
 function requireOwnerAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
   if (!OWNER_KEY) {
-    return res.status(503).json({ error: 'Owner authentication is not configured.' });
+    return sendError(res, 503, 'Owner authentication is not configured.');
   }
   const providedKey = req.headers['x-owner-key'];
   if (providedKey && providedKey === OWNER_KEY) {
     return next();
   }
-  return res.status(401).json({ error: 'Unauthorized. Provide a valid x-owner-key header.' });
+  return sendError(res, 401, 'Unauthorized. Provide a valid x-owner-key header.');
 }
 
 // ================= LIGHTWEIGHT RATE LIMITING =================
@@ -51,7 +88,7 @@ function createRateLimiter(windowMs: number, max: number) {
     const now = Date.now();
     const timestamps = (hits.get(key) || []).filter(t => now - t < windowMs);
     if (timestamps.length >= max) {
-      return res.status(429).json({ error: 'Too many requests, please slow down.' });
+      return sendError(res, 429, 'Too many requests, please slow down.');
     }
     timestamps.push(now);
     hits.set(key, timestamps);
@@ -62,6 +99,7 @@ function createRateLimiter(windowMs: number, max: number) {
 const redirectLimiter = createRateLimiter(60_000, 60); // 60 redirects/min/IP
 const uploadLimiter = createRateLimiter(60_000, 20); // 20 uploads/min/IP
 const trackLimiter = createRateLimiter(60_000, 120); // 120 beacon calls/min/IP
+const ownerVerifyLimiter = createRateLimiter(60_000, 5); // 5 owner-key attempts/min/IP
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 if (!fs.existsSync(DATA_DIR)) {
@@ -467,24 +505,24 @@ app.post('/api/upload', requireOwnerAuth, uploadLimiter, (req, res) => {
   try {
     const { dataUrl, filename } = req.body;
     if (!dataUrl || typeof dataUrl !== 'string') {
-      return res.status(400).json({ error: 'No image data provided' });
+      return sendError(res, 400, 'No image data provided');
     }
 
     const match = dataUrl.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
     if (!match) {
-      return res.status(400).json({ error: 'Unsupported image format. Please upload a JPG, PNG, GIF, or WEBP file.' });
+      return sendError(res, 400, 'Unsupported image format. Please upload a JPG, PNG, GIF, or WEBP file.');
     }
 
     const rawType = match[1].toLowerCase();
     const ext = ALLOWED_UPLOAD_TYPES[rawType];
     if (!ext) {
-      return res.status(400).json({ error: 'Unsupported image type. Allowed: JPG, PNG, GIF, WEBP.' });
+      return sendError(res, 400, 'Unsupported image type. Allowed: JPG, PNG, GIF, WEBP.');
     }
 
     const base64Data = match[2];
     const buffer = Buffer.from(base64Data, 'base64');
     if (buffer.length === 0 || buffer.length > MAX_UPLOAD_BYTES) {
-      return res.status(413).json({ error: `Image too large. Max size is ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB.` });
+      return sendError(res, 413, `Image too large. Max size is ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB.`);
     }
 
     const cleanName = filename
@@ -499,7 +537,7 @@ app.post('/api/upload', requireOwnerAuth, uploadLimiter, (req, res) => {
     res.json({ imageUrl: publicUrl, success: true });
   } catch (err: any) {
     console.error('Image upload failed');
-    res.status(500).json({ error: 'Failed to process and store image upload' });
+    sendError(res, 500, 'Failed to process and store image upload');
   }
 });
 
@@ -542,7 +580,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Verify an owner key from the client-side login gate.
-app.post('/api/owner/verify', requireOwnerAuth, (req, res) => {
+app.post('/api/owner/verify', ownerVerifyLimiter, requireOwnerAuth, (req, res) => {
   res.json({ success: true, protected: Boolean(OWNER_KEY) });
 });
 
@@ -581,7 +619,7 @@ app.get('/api/products', (req, res) => {
 app.get('/api/products/:id', (req, res) => {
   const product = products.find(p => p.id === req.params.id);
   if (!product) {
-    return res.status(404).json({ error: 'Product not found' });
+    return sendError(res, 404, 'Product not found');
   }
   res.json(product);
 });
@@ -607,7 +645,7 @@ app.post('/api/products', requireOwnerAuth, (req, res) => {
   } = req.body;
 
   if (!title || !price || !affiliateUrl) {
-    return res.status(400).json({ error: 'Title, price, and affiliate URL are required.' });
+    return sendError(res, 400, 'Title, price, and affiliate URL are required.');
   }
 
   const newProduct: Product = {
@@ -650,7 +688,7 @@ const UPDATABLE_PRODUCT_FIELDS = [
 app.put('/api/products/:id', requireOwnerAuth, (req, res) => {
   const index = products.findIndex(p => p.id === req.params.id);
   if (index === -1) {
-    return res.status(404).json({ error: 'Product not found' });
+    return sendError(res, 404, 'Product not found');
   }
 
   const existing = products[index];
@@ -693,7 +731,7 @@ app.delete('/api/products/:id', requireOwnerAuth, (req, res) => {
   const initialLength = products.length;
   products = products.filter(p => p.id !== req.params.id);
   if (products.length === initialLength) {
-    return res.status(404).json({ error: 'Product not found' });
+    return sendError(res, 404, 'Product not found');
   }
   saveData();
   res.json({ success: true, message: 'Product deleted' });
@@ -704,7 +742,7 @@ app.delete('/api/products/:id', requireOwnerAuth, (req, res) => {
 app.get(['/api/redirect/:id', '/r/:id'], redirectLimiter, (req, res) => {
   const product = products.find(p => p.id === req.params.id);
   if (!product) {
-    return res.status(404).send('Product link not found.');
+    return sendError(res, 404, 'Product link not found.');
   }
 
   const userAgent = req.headers['user-agent'] || '';
@@ -762,7 +800,7 @@ app.post('/api/track/click', trackLimiter, (req, res) => {
   const product = products.find(p => p.id === productId);
 
   if (!product) {
-    return res.status(404).json({ error: 'Product not found' });
+    return sendError(res, 404, 'Product not found');
   }
 
   const userAgent = req.headers['user-agent'] || '';
@@ -806,7 +844,7 @@ app.post('/api/analytics/conversion', requireOwnerAuth, (req, res) => {
   const product = products.find(p => p.id === productId);
 
   if (!product) {
-    return res.status(404).json({ error: 'Product not found' });
+    return sendError(res, 404, 'Product not found');
   }
 
   const val = parseFloat(orderValue) || product.price;
@@ -979,6 +1017,13 @@ app.post('/api/analytics/reset', requireOwnerAuth, (req, res) => {
   res.json({ success: true, message: 'Analytics reset to fresh seed data' });
 });
 
+app.use((err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (res.headersSent) return next(err);
+  const message = err instanceof Error ? err.message : 'Unknown server error';
+  console.error(`[${res.locals.correlationId}] Request failed: ${message}`);
+  return sendError(res, 500, 'An unexpected server error occurred.');
+});
+
 // ================= VITE INTEGRATION =================
 
 async function startServer() {
@@ -997,7 +1042,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`SillyFinds affiliate server running on http://localhost:${PORT}`);
+    console.info(`SillyFinds affiliate server running on http://localhost:${PORT}`);
   });
 }
 
