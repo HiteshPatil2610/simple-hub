@@ -8,3 +8,8 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# SQLite runtime data (generated on boot; never commit live data)
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal

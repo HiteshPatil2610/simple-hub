@@ -60,7 +60,7 @@ Raccoon Hub lets content creators, curators, and niche site owners share hand-pi
 |---|---|
 | Frontend | React 19 · Vite 6 · Tailwind CSS 4 · Motion (animations) · Recharts · Lucide icons |
 | Backend | Express 4 · TypeScript · `tsx` (dev) / `esbuild` (production bundle) |
-| Storage | Flat JSON files on disk — no database required |
+| Database | SQLite via Node's built-in `node:sqlite` (single file, no external database server) |
 
 ---
 
@@ -68,8 +68,9 @@ Raccoon Hub lets content creators, curators, and niche site owners share hand-pi
 
 ```
 ├── server.ts                        # Express API — auth, redirects, telemetry
+├── db.ts                            # SQLite schema + data-access layer
 ├── index.html                       # Vite entry HTML
-├── data/                            # Persisted product & analytics data (JSON)
+├── data/                            # Persisted SQLite database + uploads
 ├── public/uploads/                  # Uploaded product images
 ├── src/
 │   ├── App.tsx                      # Top-level view routing (storefront vs owner hub)
@@ -93,7 +94,7 @@ Raccoon Hub lets content creators, curators, and niche site owners share hand-pi
 
 ## 🚀 Getting Started
 
-**Prerequisites:** Node.js 18+
+**Prerequisites:** Node.js 22.5+
 
 ```bash
 # 1. Clone and install
@@ -139,6 +140,7 @@ Open `http://localhost:3000`. Visit `http://localhost:3000/#admin` and enter you
 > ⚠️ `OWNER_KEY` must be set before starting the server. Protected routes fail closed when it is missing.
 
 In production, the server refuses to start when `OWNER_KEY` is missing. `PORT` is optional and defaults to `3000`.
+Products, uploads, and click/conversion analytics are stored by the Express backend in a single SQLite database file (`raccoon-hub.sqlite`) inside `DATA_DIR`. For deployments with ephemeral filesystems, set `DATA_DIR` and `UPLOADS_DIR` to mounted persistent-volume paths so products, uploads, and tracking records survive restarts and redeployments. Requires Node.js ≥ 22.5 (for the built-in `node:sqlite` module).
 
 ### Pre-deployment checklist
 

@@ -94,13 +94,13 @@ Available under **Owner Hub → Records & Clicks**, and via `GET /api/analytics`
 
 ## 5. Data Model
 
-Data persists as flat JSON files in `data/`, loaded into memory on boot and rewritten on every mutation:
+Data persists in a single SQLite database file (`raccoon-hub.sqlite`) inside `DATA_DIR` (default `data/`), accessed through Node's built-in `node:sqlite` module. Unlike the previous flat JSON files, SQLite handles concurrent writes safely with proper write-locking and transactional inserts, so parallel click tracking can no longer lose a write. Set `DATA_DIR` and `UPLOADS_DIR` to persistent-volume paths in production.
 
-| File | Contents |
+| Table | Contents |
 |---|---|
-| `data/products.json` | Product catalog |
-| `data/clicks.json` | Every outbound click event |
-| `data/conversions.json` | Recorded conversions |
+| `products` | Product catalog |
+| `clicks` | Every outbound click event |
+| `conversions` | Recorded conversions |
 
 | Type | Key fields |
 |---|---|
@@ -108,7 +108,7 @@ Data persists as flat JSON files in `data/`, loaded into memory on boot and rewr
 | `ClickEvent` | `id`, `productId`, `timestamp`, `referrer`, `device`, `utmSource/Medium/Campaign`, `destinationUrl`, `visitorHash` |
 | `ConversionEvent` | `id`, `clickId`, `productId`, `timestamp`, `platform` |
 
-> **Note:** flat-file storage with `fs.writeFileSync` is fine at small/personal scale, but concurrent writes aren't locked — under simultaneous requests, one write can be lost to another. Consider a real database (SQLite, Postgres) if traffic grows meaningfully.
+On the first boot against a fresh database, historical data from the legacy `data/products.json`, `data/clicks.json` and `data/conversions.json` is imported automatically (the migration is idempotent and the JSON files are left in place as a backup). **Requires Node.js ≥ 22.5** for the built-in `node:sqlite` module.
 
 ---
 
@@ -141,7 +141,7 @@ Data persists as flat JSON files in `data/`, loaded into memory on boot and rewr
 |---|---|
 | Frontend | React 19, Vite 6, Tailwind CSS 4, Motion (animations), Recharts (charts), Lucide (icons) |
 | Backend | Express 4, TypeScript, `tsx` (dev) / `esbuild` (production bundle) |
-| Storage | Flat JSON files on disk (`data/`, `public/uploads/`) |
+| Database | SQLite via Node's built-in `node:sqlite` (`data/raccoon-hub.sqlite`); `public/uploads/` for images |
 
 ---
 
@@ -149,9 +149,10 @@ Data persists as flat JSON files in `data/`, loaded into memory on boot and rewr
 
 ```
 ├── server.ts                        # Express API, auth, redirect/telemetry logic
+├── db.ts                            # SQLite schema + data-access layer + JSON migration
 ├── index.html                       # Vite entry HTML
 ├── metadata.json                    # Project metadata (name: "Simple Hub")
-├── data/                            # Persisted JSON data (products, clicks, conversions)
+├── data/                            # Persisted SQLite DB + uploads
 ├── public/uploads/                  # Uploaded product images
 ├── src/
 │   ├── App.tsx                      # Top-level view routing (storefront vs owner hub)
@@ -182,5 +183,5 @@ Data persists as flat JSON files in `data/`, loaded into memory on boot and rewr
 - **No real affiliate-network webhook.** `POST /api/analytics/conversion` exists as a stub for recording conversions but isn't wired to any live Amazon Associates reporting — revenue figures are only as accurate as what's manually or programmatically fed into it.
 - **Seed catalog includes non-Amazon platforms** (TikTok Shop, AliExpress, Etsy) despite the product being scoped to Amazon Associates. Safe to delete these from the Owner Hub if you want the storefront to match the pitch exactly.
 - **Single shared owner passcode**, not per-user accounts — fine for a solo operator, not suitable if multiple people need distinct admin permissions.
-- **Flat-file storage** has no write-locking — see the note in [Data Model](#5-data-model).
+- **Single SQLite file**, not a networked database — fine for a solo operator and single-instance deploys; not suited to horizontally scaling the backend across many instances without switching to Postgres.
 - **`@google/genai` dependency** is present in `package.json` from the project's original scaffolding but isn't used anywhere in the current code — safe to remove if you want a leaner install, or safe to leave if you plan to add AI features later.

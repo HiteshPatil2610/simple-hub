@@ -209,20 +209,10 @@ export default function App() {
     <div className="min-h-screen bg-[#FFFBF0] text-[#2D3436] flex flex-col font-sans selection:bg-[#FF6B6B] selection:text-white">
       {/* Navigation */}
       <Navbar
-        currentView={currentView}
-        onViewChange={view => {
-          changeView(view);
-          if (view === 'analytics') setOwnerSubTab('analytics');
-          if (view === 'owner') setOwnerSubTab('products');
-        }}
+        onViewChange={changeView}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        onOpenAddModal={() => {
-          setEditingProduct(null);
-          setIsAddModalOpen(true);
-        }}
         totalProducts={products.length}
-        totalClicksToday={clicksToday}
       />
 
       {/* Main View Router */}
@@ -467,7 +457,7 @@ export default function App() {
               {/* Product Grid: Displays Image, Title, Description, and Amazon CTA ONLY */}
               <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
                 {isLoading ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 sm:gap-6">
+                  <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
                     {[...Array(8)].map((_, i) => (
                       <div key={i} className="bg-white rounded-[2rem] border-4 border-[#2D3436] p-5 space-y-4 shadow-[6px_6px_0px_0px_rgba(45,52,54,1)] animate-pulse">
                         <div className="aspect-square bg-[#FFE66D]/30 border-2 border-[#2D3436] rounded-[1.5rem]"></div>
@@ -497,7 +487,7 @@ export default function App() {
                     </button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 sm:gap-6">
+                  <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
                     {filteredProducts.map((product, idx) => (
                       <ProductCard
                         key={product.id}

@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import helmet from 'helmet';
 import { createServer as createViteServer } from 'vite';
 import { Product, ClickEvent, ConversionEvent, AnalyticsSummary } from './src/types';
+import { store, migrateFromJsonIfNeeded } from './db';
 
 const app = express();
 const configuredPort = Number.parseInt(process.env.PORT || '3000', 10);
@@ -101,75 +102,16 @@ const uploadLimiter = createRateLimiter(60_000, 20); // 20 uploads/min/IP
 const trackLimiter = createRateLimiter(60_000, 120); // 120 beacon calls/min/IP
 const ownerVerifyLimiter = createRateLimiter(60_000, 5); // 5 owner-key attempts/min/IP
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(process.cwd(), 'data'));
+const UPLOADS_DIR = path.resolve(process.env.UPLOADS_DIR || path.join(process.cwd(), 'public', 'uploads'));
 
-const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) {
+try {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+} catch {
+  throw new Error('Persistent storage directories could not be created. Check DATA_DIR and UPLOADS_DIR.');
 }
 app.use('/uploads', express.static(UPLOADS_DIR));
-
-const PRODUCTS_FILE = path.join(DATA_DIR, 'products.json');
-const CLICKS_FILE = path.join(DATA_DIR, 'clicks.json');
-const CONVERSIONS_FILE = path.join(DATA_DIR, 'conversions.json');
-
-// Products are added through the owner hub and persisted in data/products.json.
-
-// In-memory data store with file persistence
-let products: Product[] = [];
-let clicks: ClickEvent[] = [];
-let conversions: ConversionEvent[] = [];
-
-function loadData() {
-  try {
-    if (fs.existsSync(PRODUCTS_FILE)) {
-      products = JSON.parse(fs.readFileSync(PRODUCTS_FILE, 'utf-8'));
-    } else {
-      products = [];
-      fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(products, null, 2));
-    }
-  } catch (err) {
-    console.error('Error loading products, using defaults');
-    products = [];
-  }
-
-  try {
-    if (fs.existsSync(CLICKS_FILE)) {
-      clicks = JSON.parse(fs.readFileSync(CLICKS_FILE, 'utf-8'));
-    } else {
-      clicks = [];
-      fs.writeFileSync(CLICKS_FILE, JSON.stringify(clicks, null, 2));
-    }
-  } catch (err) {
-    console.error('Error loading clicks');
-    clicks = [];
-  }
-
-  try {
-    if (fs.existsSync(CONVERSIONS_FILE)) {
-      conversions = JSON.parse(fs.readFileSync(CONVERSIONS_FILE, 'utf-8'));
-    } else {
-      conversions = [];
-      fs.writeFileSync(CONVERSIONS_FILE, JSON.stringify(conversions, null, 2));
-    }
-  } catch (err) {
-    console.error('Error loading conversions');
-    conversions = [];
-  }
-}
-
-function saveData() {
-  try {
-    fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(products, null, 2));
-    fs.writeFileSync(CLICKS_FILE, JSON.stringify(clicks, null, 2));
-    fs.writeFileSync(CONVERSIONS_FILE, JSON.stringify(conversions, null, 2));
-  } catch (err) {
-    console.error('Error saving data');
-  }
-}
 
 // Build URL ensuring direct affiliate links and tracking parameters
 export function buildAffiliateRedirectUrl(
@@ -289,13 +231,21 @@ function normalizeReferrer(value: unknown): string {
   }
 }
 
-loadData();
+// Boot persistence: open the SQLite database and, on a fresh install, import
+// any historical data that still lives in the legacy JSON files.
+const migration = migrateFromJsonIfNeeded();
+if (migration.migrated) {
+  console.info(
+    `Migrated legacy JSON data into SQLite (${migration.counts.products} products, ` +
+      `${migration.counts.clicks} clicks, ${migration.counts.conversions} conversions).`
+  );
+}
 
 // ================= API ENDPOINTS =================
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), productCount: products.length });
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), productCount: store.listProducts().length });
 });
 
 // Verify an owner key from the client-side login gate.
@@ -306,7 +256,7 @@ app.post('/api/owner/verify', ownerVerifyLimiter, requireOwnerAuth, (req, res) =
 // GET all products
 app.get('/api/products', (req, res) => {
   const { category, search, platform, featured } = req.query;
-  let filtered = [...products];
+  let filtered = store.listProducts();
 
   if (category && category !== 'All') {
     filtered = filtered.filter(p => p.category.toLowerCase() === String(category).toLowerCase());
@@ -336,7 +286,7 @@ app.get('/api/products', (req, res) => {
 
 // GET single product
 app.get('/api/products/:id', (req, res) => {
-  const product = products.find(p => p.id === req.params.id);
+  const product = store.getProduct(req.params.id);
   if (!product) {
     return sendError(res, 404, 'Product not found');
   }
@@ -381,8 +331,7 @@ app.post('/api/products', requireOwnerAuth, (req, res) => {
     createdAt: new Date().toISOString(),
   };
 
-  products.unshift(newProduct);
-  saveData();
+  store.createProduct(newProduct);
 
   res.status(201).json(newProduct);
 });
@@ -399,12 +348,11 @@ const UPDATABLE_PRODUCT_FIELDS = [
 
 // PUT update product
 app.put('/api/products/:id', requireOwnerAuth, (req, res) => {
-  const index = products.findIndex(p => p.id === req.params.id);
-  if (index === -1) {
+  const existing = store.getProduct(req.params.id);
+  if (!existing) {
     return sendError(res, 404, 'Product not found');
   }
 
-  const existing = products[index];
   const body = req.body || {};
   const updated: Product = { ...existing };
 
@@ -431,27 +379,24 @@ app.put('/api/products/:id', requireOwnerAuth, (req, res) => {
   }
   updated.id = existing.id; // id is never overridable
 
-  products[index] = updated;
-  saveData();
+  store.updateProduct(updated);
 
   res.json(updated);
 });
 
 // DELETE product
 app.delete('/api/products/:id', requireOwnerAuth, (req, res) => {
-  const initialLength = products.length;
-  products = products.filter(p => p.id !== req.params.id);
-  if (products.length === initialLength) {
+  const deleted = store.deleteProduct(req.params.id);
+  if (!deleted) {
     return sendError(res, 404, 'Product not found');
   }
-  saveData();
   res.json({ success: true, message: 'Product deleted' });
 });
 
 // REDIRECT ENDPOINT: /api/redirect/:id or /r/:id
 // Seamlessly logs click and redirects user to target affiliate URL
 app.get(['/api/redirect/:id', '/r/:id'], redirectLimiter, (req, res) => {
-  const product = products.find(p => p.id === req.params.id);
+  const product = store.getProduct(req.params.id);
   if (!product) {
     return sendError(res, 404, 'Product link not found.');
   }
@@ -488,8 +433,7 @@ app.get(['/api/redirect/:id', '/r/:id'], redirectLimiter, (req, res) => {
     visitorHash: getVisitorHash(req),
   };
 
-  clicks.unshift(clickEvent);
-  saveData();
+  store.createClick(clickEvent);
 
   // If request expects JSON (for client-side open in new tab with stats)
   if (req.query.format === 'json') {
@@ -507,7 +451,7 @@ app.get(['/api/redirect/:id', '/r/:id'], redirectLimiter, (req, res) => {
 // CLIENT TRACKING BEACON: /api/track/click
 app.post('/api/track/click', trackLimiter, (req, res) => {
   const { productId, utmSource, utmMedium, utmCampaign, subid, referrer } = req.body;
-  const product = products.find(p => p.id === productId);
+  const product = store.getProduct(productId);
 
   if (!product) {
     return sendError(res, 404, 'Product not found');
@@ -537,8 +481,7 @@ app.post('/api/track/click', trackLimiter, (req, res) => {
     visitorHash: getVisitorHash(req),
   };
 
-  clicks.unshift(clickEvent);
-  saveData();
+  store.createClick(clickEvent);
 
   res.json({
     success: true,
@@ -550,7 +493,7 @@ app.post('/api/track/click', trackLimiter, (req, res) => {
 // RECORD CONVERSION (Simulation / affiliate callback)
 app.post('/api/analytics/conversion', requireOwnerAuth, (req, res) => {
   const { productId, clickId } = req.body;
-  const product = products.find(p => p.id === productId);
+  const product = store.getProduct(productId);
 
   if (!product) {
     return sendError(res, 404, 'Product not found');
@@ -565,15 +508,14 @@ app.post('/api/analytics/conversion', requireOwnerAuth, (req, res) => {
     platform: product.platform,
   };
 
-  conversions.unshift(convEvent);
-  saveData();
+  store.createConversion(convEvent);
 
   res.status(201).json(convEvent);
 });
 
 function getClicksToday(): number {
   const todayStr = new Date().toISOString().split('T')[0];
-  return clicks.filter(c => c.timestamp.startsWith(todayStr)).length;
+  return store.listClicks().filter(c => c.timestamp.startsWith(todayStr)).length;
 }
 
 // Public analytics are limited to a non-identifying aggregate.
@@ -583,10 +525,13 @@ app.get('/api/analytics/public', (req, res) => {
 
 // GET ANALYTICS SUMMARY (owner-only because it contains click telemetry)
 app.get('/api/analytics', requireOwnerAuth, (req, res) => {
-  const totalClicks = clicks.length;
-  const hashedClicks = clicks.filter(c => c.visitorHash);
-  const uniqueVisitors = new Set(hashedClicks.map(c => c.visitorHash)).size;
-  const totalConversions = conversions.length;
+  const clicks = store.listClicks();
+  const conversions = store.listConversions();
+  const products = store.listProducts();
+
+  const totalClicks = store.countTotalClicks();
+  const uniqueVisitors = store.countDistinctVisitors();
+  const totalConversions = store.countTotalConversions();
   const conversionRate = totalClicks > 0 ? Number(((totalConversions / totalClicks) * 100).toFixed(1)) : 0;
 
   const clicksToday = getClicksToday();
@@ -698,7 +643,7 @@ app.get('/api/analytics', requireOwnerAuth, (req, res) => {
     platformBreakdown,
     categoryBreakdown,
     deviceBreakdown,
-    recentClicks: clicks.slice(0, 50).map(({ visitorHash, ...click }) => click),
+    recentClicks: store.recentClicks(50).map(({ visitorHash, ...click }) => click),
   };
 
   res.json(summary);
@@ -706,9 +651,8 @@ app.get('/api/analytics', requireOwnerAuth, (req, res) => {
 
 // RESET OR RESEED ANALYTICS
 app.post('/api/analytics/reset', requireOwnerAuth, (req, res) => {
-  clicks = [];
-  conversions = [];
-  saveData();
+  store.deleteAllClicks();
+  store.deleteAllConversions();
   res.json({ success: true, message: 'Analytics reset to empty live data' });
 });
 
