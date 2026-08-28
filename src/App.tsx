@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Flame, ArrowUpDown, ShoppingBag, LayoutDashboard, BarChart3, Plus, Package } from 'lucide-react';
+import { Sparkles, Flame, ArrowUpDown, ShoppingBag, LayoutDashboard, BarChart3, Plus, Package, LayoutGrid, Grid, ArrowDown } from 'lucide-react';
 import { Product, AnalyticsSummary, ViewMode } from './types';
 import { api, getAuthToken, clearAuthToken } from './services/api';
 import { Navbar } from './components/Navbar';
-import { ProductCard } from './components/ProductCard';
+import { ProductCard, BentoVariant } from './components/ProductCard';
 import { ProductDetailModal } from './components/ProductDetailModal';
 import { ProductAdminModal } from './components/ProductAdminModal';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
@@ -31,16 +31,37 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Filters & Search
+  // Filters & Search & Layout
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [sortBy, setSortBy] = useState<'popular' | 'title-asc' | 'recent'>('popular');
+  const [layoutMode, setLayoutMode] = useState<'bento' | 'classic'>('bento');
 
   // Modals & Notifications
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
   const [redirectToastProduct, setRedirectToastProduct] = useState<Product | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+  // Bento Variant Calculation per product index
+  const getBentoVariantForIndex = (product: Product, index: number): BentoVariant => {
+    if (layoutMode === 'classic') return 'standard';
+    if (product.featured) return 'hero';
+    
+    const bentoPattern: BentoVariant[] = [
+      'hero',
+      'standard',
+      'tall',
+      'standard',
+      'wide',
+      'standard',
+      'standard',
+      'wide',
+      'tall',
+      'standard',
+    ];
+    return bentoPattern[index % bentoPattern.length];
+  };
 
   // Owner Hub access gate
   const [isOwnerAuthed, setIsOwnerAuthed] = useState(false);
@@ -362,56 +383,182 @@ export default function App() {
               transition={{ duration: 0.28, ease: 'easeOut' }}
             >
               {/* Hero Section */}
-              <div className="bg-[#FFFBF0] border-b-4 border-[#2D3436] py-8 sm:py-14 px-4 sm:px-6 lg:px-8">
-                <div className="max-w-7xl mx-auto text-center">
-                  <motion.div
-                    initial={{ scale: 0.92, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ duration: 0.3 }}
-                    className="inline-flex items-center gap-2 px-3.5 sm:px-4 py-1.5 rounded-full bg-[#FFE66D] border-2 border-[#2D3436] text-[#2D3436] text-[11px] sm:text-xs font-black uppercase shadow-[3px_3px_0px_0px_rgba(45,52,54,1)] mb-3 sm:mb-4"
-                  >
-                    <span className="text-base leading-none">🦝</span>
-                    <span>Curated Amazon Finds</span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#2D3436]"></span>
-                    <span className="text-[#FF6B6B] font-black">Direct Affiliate Links</span>
-                  </motion.div>
+              <div className="relative overflow-hidden bg-gradient-to-b from-[#FFE66D]/25 via-[#FFFBF0] to-[#FFFBF0] border-b-4 border-[#2D3436] py-10 sm:py-16 px-4 sm:px-6 lg:px-8">
+                {/* Decorative background subtle grid pattern */}
+                <div className="absolute inset-0 opacity-[0.04] pointer-events-none bg-[radial-gradient(#2D3436_1px,transparent_1px)] [background-size:16px_16px]" />
 
-                  <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-[#2D3436] tracking-tight max-w-4xl mx-auto leading-[1.15]">
-                    Curated <span className="text-[#FF6B6B]">Amazon Finds</span> You Didn’t Know You Needed.
-                  </h1>
+                <div className="max-w-7xl mx-auto">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+                    {/* Left Column: Headline, Copy & Action CTAs */}
+                    <div className="lg:col-span-7 text-left space-y-5">
+                      <motion.div
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ duration: 0.3 }}
+                        className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FFE66D] border-3 border-[#2D3436] text-[#2D3436] text-xs font-black uppercase shadow-[3px_3px_0px_0px_rgba(45,52,54,1)]"
+                      >
+                        <span className="text-base leading-none">🦝</span>
+                        <span>Raccoon Finds Hub</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#2D3436]" />
+                        <span className="text-[#FF6B6B] font-black">Hand-Picked Amazon Finds</span>
+                      </motion.div>
 
-                  <p className="mt-3 sm:mt-4 text-xs sm:text-base text-[#2D3436]/80 font-bold max-w-2xl mx-auto leading-relaxed">
-                    Hand-picked viral gadgets, aesthetic desk setups, and clever novelties. Click any find to view and purchase directly on Amazon.
-                  </p>
+                      <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-[#2D3436] tracking-tight leading-[1.12]">
+                        Discover{' '}
+                        <span className="relative inline-block px-3 py-1 rounded-2xl bg-[#FF6B6B] text-white border-3 border-[#2D3436] shadow-[4px_4px_0px_0px_rgba(45,52,54,1)] -rotate-1">
+                          Viral Amazon Finds
+                        </span>{' '}
+                        Worth Every Cent.
+                      </h1>
 
-                  {/* Trust badges & Store Manager Quick Access */}
-                  <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 mt-5 sm:mt-6 text-[11px] sm:text-xs text-[#2D3436] font-black">
-                    <div className="flex items-center gap-1.5 bg-white border-2 border-[#2D3436] px-3 py-1 rounded-full shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                      <span>Direct Amazon Links</span>
+                      <p className="text-sm sm:text-lg text-[#2D3436]/85 font-semibold max-w-xl leading-relaxed">
+                        Curated viral gadgets, aesthetic desk setup upgrades, and clever everyday novelties. Tested finds with direct 1-click links straight to Amazon.
+                      </p>
+
+                      {/* CTA Buttons Row */}
+                      <div className="flex flex-wrap items-center gap-3 pt-2">
+                        <a
+                          href="#product-viewing-area"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            document.getElementById('product-viewing-area')?.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#4ECDC4] hover:bg-[#3dbdb5] text-[#2D3436] font-black text-xs sm:text-sm uppercase tracking-wider border-3 border-[#2D3436] shadow-[4px_4px_0px_0px_rgba(45,52,54,1)] active:translate-y-0.5 active:shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] transition cursor-pointer"
+                        >
+                          <Flame className="w-4 h-4 text-[#2D3436] fill-[#FFD93D]" />
+                          <span>Explore Trending Finds</span>
+                          <ArrowDown className="w-4 h-4 stroke-[3]" />
+                        </a>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSortBy('popular');
+                            setSelectedCategory('All');
+                            document.getElementById('product-viewing-area')?.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          className="inline-flex items-center gap-2 px-4 py-3 rounded-2xl bg-white hover:bg-[#FFE66D] text-[#2D3436] font-black text-xs sm:text-sm uppercase tracking-wider border-3 border-[#2D3436] shadow-[4px_4px_0px_0px_rgba(45,52,54,1)] active:translate-y-0.5 active:shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] transition cursor-pointer"
+                        >
+                          <Sparkles className="w-4 h-4 text-[#FF6B6B]" />
+                          <span>Most Popular</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          id="hero-manage-products-btn"
+                          onClick={() => {
+                            changeView('owner');
+                            setOwnerSubTab('products');
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-3 rounded-2xl bg-white hover:bg-slate-100 text-[#2D3436]/80 font-bold text-xs uppercase border-2 border-[#2D3436]/40 transition cursor-pointer"
+                          title="Open Owner & Records Product Manager"
+                        >
+                          <LayoutDashboard className="w-3.5 h-3.5" />
+                          <span>Owner Hub</span>
+                        </button>
+                      </div>
+
+                      {/* Trust Badges Bar */}
+                      <div className="flex flex-wrap items-center gap-3 pt-3 text-xs font-black text-[#2D3436]">
+                        <div className="flex items-center gap-1.5 bg-white border-2 border-[#2D3436] px-3 py-1 rounded-full shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                          <span>Direct Amazon Links</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 bg-white border-2 border-[#2D3436] px-3 py-1 rounded-full shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
+                          <span className="w-2 h-2 rounded-full bg-[#FF6B6B]"></span>
+                          <span>Verified Affiliate Tags</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 bg-white border-2 border-[#2D3436] px-3 py-1 rounded-full shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
+                          <span className="w-2 h-2 rounded-full bg-[#FFD93D]"></span>
+                          <span>Hand-Picked Quality</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 bg-white border-2 border-[#2D3436] px-3 py-1 rounded-full shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
-                      <span className="w-2 h-2 rounded-full bg-[#FF6B6B]"></span>
-                      <span>Verified Affiliate Tracking</span>
+
+                    {/* Right Column: Gamer Raccoon Mascot Spotlight Card */}
+                    <div className="lg:col-span-5 relative mt-4 lg:mt-0">
+                      {/* Floating Sticker 1 - Top Right */}
+                      <motion.div
+                        animate={{ y: [0, -6, 0] }}
+                        transition={{ repeat: Infinity, duration: 4, ease: 'easeInOut' }}
+                        className="absolute -top-5 -right-3 z-20 bg-[#FF6B6B] text-white border-3 border-[#2D3436] px-3.5 py-1.5 rounded-2xl text-xs font-black uppercase shadow-[3px_3px_0px_0px_rgba(45,52,54,1)] rotate-6 flex items-center gap-1.5"
+                      >
+                        <Flame className="w-4 h-4 fill-white" />
+                        <span>⚡ Cyber Gamer Vibes</span>
+                      </motion.div>
+
+                      {/* Floating Sticker 2 - Bottom Left */}
+                      <motion.div
+                        animate={{ y: [0, 6, 0] }}
+                        transition={{ repeat: Infinity, duration: 3.5, ease: 'easeInOut' }}
+                        className="absolute -bottom-4 -left-4 z-20 bg-[#FFE66D] text-[#2D3436] border-3 border-[#2D3436] px-3.5 py-1.5 rounded-2xl text-xs font-black uppercase shadow-[3px_3px_0px_0px_rgba(45,52,54,1)] -rotate-3 flex items-center gap-1.5"
+                      >
+                        <span>🎮 AI Curated Amazon Finds</span>
+                      </motion.div>
+
+                      {/* Main Hero Gamer Raccoon Mascot Showcase Box */}
+                      <div className="relative bg-[#1A1E24] border-4 border-[#2D3436] rounded-[2.5rem] p-5 sm:p-6 shadow-[10px_10px_0px_0px_rgba(45,52,54,1)] overflow-hidden">
+                        {/* Glow halo overlay */}
+                        <div className="absolute -top-20 -right-20 w-60 h-60 bg-[#FF6B6B]/20 rounded-full blur-3xl pointer-events-none" />
+                        <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-[#4ECDC4]/20 rounded-full blur-3xl pointer-events-none" />
+
+                        <div className="relative z-10 flex items-center justify-between border-b-2 border-white/10 pb-3 mb-4">
+                          <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 rounded-full bg-[#FF6B6B] border border-[#2D3436]" />
+                            <span className="w-3 h-3 rounded-full bg-[#FFE66D] border border-[#2D3436]" />
+                            <span className="w-3 h-3 rounded-full bg-[#4ECDC4] border border-[#2D3436]" />
+                          </div>
+                          <span className="text-[11px] font-black uppercase tracking-wider text-[#FFE66D] flex items-center gap-1">
+                            <span>🦝</span> Official Mascot
+                          </span>
+                        </div>
+
+                        {/* Gamer Raccoon Mascot Featured Frame */}
+                        <div className="relative aspect-square sm:aspect-[4/3] bg-[#0F1115] border-3 border-[#2D3436] rounded-2xl overflow-hidden mb-4 group shadow-inner">
+                          <img
+                            src="/raccoon-mascot.jpg"
+                            alt="Raccoon Hub Mascot"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#1A1E24] via-transparent to-transparent opacity-60 pointer-events-none" />
+                          
+                          <div className="absolute bottom-3 left-3 right-3 p-3 bg-[#1A1E24]/90 backdrop-blur-md border-2 border-white/20 rounded-xl">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <h4 className="text-white font-black text-xs sm:text-sm">
+                                  Gamer Raccoon Curator
+                                </h4>
+                                <p className="text-[10px] text-white/70 font-semibold">
+                                  Scouring Amazon 24/7 for viral finds
+                                </p>
+                              </div>
+                              <span className="px-2 py-0.5 rounded-full bg-[#FF6B6B] text-white text-[9px] font-black uppercase border border-white/20">
+                                Active
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Mascot Info / Stat Counter */}
+                        <div className="relative z-10 flex items-center justify-between bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-white font-bold">
+                          <div>
+                            <div className="text-[10px] uppercase font-black text-white/60">Live Storefront Catalog</div>
+                            <div className="text-sm font-black text-[#4ECDC4]">{products.length} Curated Amazon Finds</div>
+                          </div>
+                          <a
+                            href="#product-viewing-area"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              document.getElementById('product-viewing-area')?.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-[#FFE66D] hover:bg-[#ffd93d] text-[#2D3436] font-black text-[11px] uppercase border-2 border-[#2D3436] shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] active:translate-y-0.5 cursor-pointer"
+                          >
+                            Explore Finds
+                          </a>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 bg-white border-2 border-[#2D3436] px-3 py-1 rounded-full shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
-                      <span className="w-2 h-2 rounded-full bg-[#FFD93D]"></span>
-                      <span>Curated Hand-Picked Quality</span>
-                    </div>
-                    <button
-                      type="button"
-                      id="hero-manage-products-btn"
-                      onClick={() => {
-                        changeView('owner');
-                        setOwnerSubTab('products');
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                      }}
-                      className="inline-flex items-center gap-1.5 bg-[#4ECDC4] hover:bg-[#3dbdb5] text-[#2D3436] border-2 border-[#2D3436] px-3.5 py-1 rounded-full shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] transition active:translate-y-0.5 cursor-pointer"
-                      title="Open Owner & Records Product Manager"
-                    >
-                      <LayoutDashboard className="w-3.5 h-3.5 stroke-[2.5]" />
-                      <span>Owner Hub: Edit Products</span>
-                    </button>
                   </div>
                 </div>
               </div>
@@ -446,6 +593,38 @@ export default function App() {
                     </div>
 
                     <div className="flex items-center gap-2 sm:gap-3">
+                      {/* Grid Layout Mode Switcher */}
+                      <div className="flex items-center p-1 bg-white border-2 border-[#2D3436] rounded-xl shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
+                        <button
+                          type="button"
+                          id="layout-bento-btn"
+                          onClick={() => setLayoutMode('bento')}
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black uppercase transition ${
+                            layoutMode === 'bento'
+                              ? 'bg-[#FFE66D] text-[#2D3436] border border-[#2D3436] shadow-[1px_1px_0px_0px_rgba(45,52,54,1)]'
+                              : 'text-[#2D3436]/60 hover:text-[#2D3436]'
+                          }`}
+                          title="Asymmetric Bento Grid Layout"
+                        >
+                          <LayoutGrid className="w-3.5 h-3.5" />
+                          <span>Bento</span>
+                        </button>
+                        <button
+                          type="button"
+                          id="layout-classic-btn"
+                          onClick={() => setLayoutMode('classic')}
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black uppercase transition ${
+                            layoutMode === 'classic'
+                              ? 'bg-[#4ECDC4] text-[#2D3436] border border-[#2D3436] shadow-[1px_1px_0px_0px_rgba(45,52,54,1)]'
+                              : 'text-[#2D3436]/60 hover:text-[#2D3436]'
+                          }`}
+                          title="Uniform Classic Grid Layout"
+                        >
+                          <Grid className="w-3.5 h-3.5" />
+                          <span>Grid</span>
+                        </button>
+                      </div>
+
                       <div className="flex items-center gap-1.5 bg-white border-2 border-[#2D3436] rounded-xl px-2.5 sm:px-3 py-1 shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] min-h-[36px]">
                         <ArrowUpDown className="w-3.5 h-3.5 text-[#2D3436]" />
                         <select
@@ -477,7 +656,7 @@ export default function App() {
               </div>
 
               {/* Product Grid: Displays Image, Title, Description, and Amazon CTA ONLY */}
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+              <div id="product-viewing-area" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
                 {isLoading ? (
                   <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
                     {[...Array(8)].map((_, i) => (
@@ -509,12 +688,19 @@ export default function App() {
                     </button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
+                  <div
+                    className={
+                      layoutMode === 'bento'
+                        ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 grid-flow-dense'
+                        : 'grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6'
+                    }
+                  >
                     {filteredProducts.map((product, idx) => (
                       <ProductCard
                         key={product.id}
                         product={product}
                         index={idx}
+                        bentoVariant={getBentoVariantForIndex(product, idx)}
                         onQuickView={p => setQuickViewProduct(p)}
                         onAffiliateClick={handleAffiliateClick}
                       />

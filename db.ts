@@ -282,6 +282,26 @@ export function migrateFromJsonIfNeeded(): { migrated: boolean; counts: { produc
   };
 }
 
+function syncProductsJson(): void {
+  try {
+    const products = (allProductsStmt.all() as Record<string, unknown>[]).map(mapProduct);
+    const jsonContent = JSON.stringify(products, null, 2);
+    fs.writeFileSync(PRODUCTS_FILE, jsonContent, 'utf-8');
+
+    // Also sync to root project data directory if DATA_DIR is a custom path
+    const rootProductsFile = path.join(process.cwd(), 'data', 'products.json');
+    if (PRODUCTS_FILE !== rootProductsFile) {
+      const dir = path.dirname(rootProductsFile);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(rootProductsFile, jsonContent, 'utf-8');
+    }
+  } catch (err) {
+    console.error('[DB] Failed to sync products.json:', err);
+  }
+}
+
 // ============================================================================
 // Public data-access API (used by server.ts)
 // ============================================================================
@@ -303,6 +323,7 @@ export const store = {
       p.imageUrl, p.platform, p.affiliateUrl, p.affiliateTag ?? null,
       p.customSubId ?? null, p.badge ?? null, p.featured ? 1 : 0, p.createdAt,
     );
+    syncProductsJson();
     return p;
   },
 
@@ -312,11 +333,16 @@ export const store = {
       p.imageUrl, p.platform, p.affiliateUrl, p.affiliateTag ?? null,
       p.customSubId ?? null, p.badge ?? null, p.featured ? 1 : 0, p.id,
     );
+    syncProductsJson();
     return p;
   },
 
   deleteProduct(id: string): boolean {
-    return deleteProductStmt.run(id).changes > 0;
+    const ok = deleteProductStmt.run(id).changes > 0;
+    if (ok) {
+      syncProductsJson();
+    }
+    return ok;
   },
 
   // ---- clicks ----
