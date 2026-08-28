@@ -3,8 +3,6 @@ export interface Product {
   title: string;
   description: string;
   category: string;
-  price: number;
-  originalPrice?: number;
   rating: number;
   reviewCount: number;
   imageUrl: string;
@@ -14,7 +12,6 @@ export interface Product {
   customSubId?: string;
   badge?: string;
   featured?: boolean;
-  commissionRate?: number; // e.g. 5 means 5%
   createdAt: string;
 }
 
@@ -22,7 +19,6 @@ export interface ClickEvent {
   id: string;
   productId: string;
   productTitle: string;
-  productPrice: number;
   platform: string;
   category: string;
   timestamp: string; // ISO string
@@ -40,8 +36,6 @@ export interface ConversionEvent {
   clickId?: string;
   productId: string;
   productTitle: string;
-  orderValue: number;
-  commissionEarned: number;
   timestamp: string;
   platform: string;
 }
@@ -51,8 +45,6 @@ export interface AnalyticsSummary {
   uniqueVisitors: number;
   totalConversions: number;
   conversionRate: number; // percentage
-  estimatedGrossVolume: number;
-  estimatedCommission: number;
   clicksToday: number;
   topProducts: {
     productId: string;
@@ -62,7 +54,6 @@ export interface AnalyticsSummary {
     conversionRate: number;
     platform: string;
     imageUrl: string;
-    price: number;
   }[];
   clicksByDay: {
     date: string;

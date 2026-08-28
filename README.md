@@ -28,7 +28,7 @@ Raccoon Hub lets content creators, curators, and niche site owners share hand-pi
 [Store Owner]
       │
       ├─► Unlocks the Owner Hub (/#admin) with a passcode
-      ├─► Adds/edits a product — title, description, category, price
+      ├─► Adds/edits a product — title, description, category
       ├─► Uploads a product photo directly from device storage
       └─► Pastes a direct Amazon affiliate link
             │

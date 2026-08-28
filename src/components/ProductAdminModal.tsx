@@ -232,13 +232,11 @@ export const ProductAdminModal: React.FC<ProductAdminModalProps> = ({
         description: description.trim() || 'Curated Amazon find hand-picked for Raccoon Hub.',
         category,
         platform: 'Amazon',
-        price: editingProduct?.price || 0,
         rating: editingProduct?.rating || 5,
         reviewCount: editingProduct?.reviewCount || 100,
         imageUrl: imageUrl.trim(),
         affiliateUrl: affiliateUrl.trim(),
         affiliateTag: extractedTag,
-        commissionRate: editingProduct?.commissionRate || 4,
       });
       onClose();
     } catch (err: any) {

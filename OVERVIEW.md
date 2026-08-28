@@ -38,7 +38,7 @@ Gated behind a passcode (see [Authentication](#3-authentication--security)). Onc
 [Store Owner]
       │
       ├─► Unlocks "Owner Hub" (/#admin) with OWNER_KEY passcode
-      ├─► Adds/edits a product (title, description, category, price)
+      ├─► Adds/edits a product (title, description, category)
       ├─► Uploads an image from device storage (/api/upload)
       └─► Pastes a direct Amazon affiliate link
             │
@@ -104,9 +104,9 @@ Data persists as flat JSON files in `data/`, loaded into memory on boot and rewr
 
 | Type | Key fields |
 |---|---|
-| `Product` | `id`, `title`, `description`, `category`, `price`, `imageUrl`, `platform`, `affiliateUrl`, `affiliateTag`, `commissionRate`, `featured` |
+| `Product` | `id`, `title`, `description`, `category`, `imageUrl`, `platform`, `affiliateUrl`, `affiliateTag`, `featured` |
 | `ClickEvent` | `id`, `productId`, `timestamp`, `referrer`, `device`, `utmSource/Medium/Campaign`, `destinationUrl`, `visitorHash` |
-| `ConversionEvent` | `id`, `clickId`, `productId`, `orderValue`, `commissionEarned`, `timestamp` |
+| `ConversionEvent` | `id`, `clickId`, `productId`, `timestamp`, `platform` |
 
 > **Note:** flat-file storage with `fs.writeFileSync` is fine at small/personal scale, but concurrent writes aren't locked — under simultaneous requests, one write can be lost to another. Consider a real database (SQLite, Postgres) if traffic grows meaningfully.
 

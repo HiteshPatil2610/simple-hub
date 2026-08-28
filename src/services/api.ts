@@ -146,8 +146,6 @@ export const api = {
 
   async recordConversion(data: {
     productId: string;
-    orderValue?: number;
-    commissionEarned?: number;
     clickId?: string;
   }): Promise<ConversionEvent> {
     const res = await fetch('/api/analytics/conversion', {

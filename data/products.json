@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "id": "prod-1787922032138",
+    "title": "Lenovo Legion R27qe Gen 2",
+    "description": "The Lenovo Legion R27qe Gen 2 is a 27-inch QHD IPS gaming monitor designed for fast, smooth gameplay and everyday productivity. It offers a 200Hz refresh rate, up to 0.5ms response time, AMD FreeSync/G-SYNC compatibility, vivid 99% sRGB colour coverage, and a fully adjustable stand with height, tilt, swivel, and pivot controls.",
+    "category": "Desk & Office",
+    "rating": 5,
+    "reviewCount": 100,
+    "imageUrl": "https://m.media-amazon.com/images/I/713+epP-MnL._SX679_.jpg",
+    "platform": "Amazon",
+    "affiliateUrl": "https://amzn.to/4vYALQv",
+    "affiliateTag": "raccoonhub-20",
+    "featured": false,
+    "createdAt": "2026-08-28T13:00:32.138Z"
+  }
+]

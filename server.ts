@@ -42,11 +42,11 @@ app.use(helmet({
       baseUri: ["'self'"],
       frameAncestors: ["'none'"],
       objectSrc: ["'none'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: IS_PRODUCTION ? ["'self'"] : ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       imgSrc: ["'self'", 'data:', 'https:'],
       connectSrc: ["'self'", 'ws:'],
-      fontSrc: ["'self'", 'data:'],
+      fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
     },
   },
   frameguard: { action: 'deny' },
@@ -265,9 +265,6 @@ app.post('/api/upload', requireOwnerAuth, uploadLimiter, (req, res) => {
 
 // Builds a stable-but-anonymous per-day fingerprint from IP + User-Agent so
 // we can count unique clickers without storing raw IPs or using cookies.
-// Previously "uniqueVisitors" was entirely fabricated as totalClicks * 0.72
-// despite the docs promising real session-based uniqueness -- this makes it
-// real, at day-level granularity.
 function getVisitorHash(req: express.Request): string {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const ua = req.headers['user-agent'] || 'unknown';
@@ -352,8 +349,6 @@ app.post('/api/products', requireOwnerAuth, (req, res) => {
     title,
     description,
     category,
-    price,
-    originalPrice,
     rating,
     reviewCount,
     imageUrl,
@@ -363,11 +358,10 @@ app.post('/api/products', requireOwnerAuth, (req, res) => {
     customSubId,
     badge,
     featured,
-    commissionRate,
   } = req.body;
 
-  if (!title || !price || !affiliateUrl) {
-    return sendError(res, 400, 'Title, price, and affiliate URL are required.');
+  if (!title || !affiliateUrl) {
+    return sendError(res, 400, 'Title and affiliate URL are required.');
   }
 
   const newProduct: Product = {
@@ -375,8 +369,6 @@ app.post('/api/products', requireOwnerAuth, (req, res) => {
     title: String(title).trim(),
     description: String(description || '').trim(),
     category: String(category || 'Viral Finds').trim(),
-    price: parseFloat(price) || 0,
-    originalPrice: originalPrice ? parseFloat(originalPrice) : undefined,
     rating: parseFloat(rating) || 5.0,
     reviewCount: parseInt(reviewCount, 10) || 1,
     imageUrl: String(imageUrl || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=80').trim(),
@@ -386,7 +378,6 @@ app.post('/api/products', requireOwnerAuth, (req, res) => {
     customSubId: customSubId ? String(customSubId).trim() : undefined,
     badge: badge ? String(badge).trim() : undefined,
     featured: Boolean(featured),
-    commissionRate: commissionRate ? parseFloat(commissionRate) : 6,
     createdAt: new Date().toISOString(),
   };
 
@@ -401,9 +392,9 @@ app.post('/api/products', requireOwnerAuth, (req, res) => {
 // stops a caller from injecting unexpected fields, and keeps the same
 // type-coercion / validation the POST route applies.
 const UPDATABLE_PRODUCT_FIELDS = [
-  'title', 'description', 'category', 'price', 'originalPrice', 'rating',
+  'title', 'description', 'category', 'rating',
   'reviewCount', 'imageUrl', 'platform', 'affiliateUrl', 'affiliateTag',
-  'customSubId', 'badge', 'featured', 'commissionRate',
+  'customSubId', 'badge', 'featured',
 ] as const;
 
 // PUT update product
@@ -420,10 +411,8 @@ app.put('/api/products/:id', requireOwnerAuth, (req, res) => {
   for (const field of UPDATABLE_PRODUCT_FIELDS) {
     if (!(field in body)) continue;
     switch (field) {
-      case 'price':
-      case 'originalPrice':
       case 'rating':
-      case 'commissionRate': {
+      {
         const num = parseFloat(body[field]);
         if (!Number.isNaN(num)) (updated as any)[field] = num;
         break;
@@ -487,7 +476,6 @@ app.get(['/api/redirect/:id', '/r/:id'], redirectLimiter, (req, res) => {
     id: `click-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     productId: product.id,
     productTitle: product.title,
-    productPrice: product.price,
     platform: product.platform,
     category: product.category,
     timestamp: new Date().toISOString(),
@@ -537,7 +525,6 @@ app.post('/api/track/click', trackLimiter, (req, res) => {
     id: `click-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     productId: product.id,
     productTitle: product.title,
-    productPrice: product.price,
     platform: product.platform,
     category: product.category,
     timestamp: new Date().toISOString(),
@@ -569,19 +556,11 @@ app.post('/api/analytics/conversion', requireOwnerAuth, (req, res) => {
     return sendError(res, 404, 'Product not found');
   }
 
-  // This is a local simulation endpoint, so financial values come only from
-  // the server-side catalog rather than client-controlled request fields.
-  const val = product.price;
-  const commRate = (product.commissionRate || 6) / 100;
-  const comm = val * commRate;
-
   const convEvent: ConversionEvent = {
     id: `conv-${Date.now()}`,
     clickId: clickId || undefined,
     productId: product.id,
     productTitle: product.title,
-    orderValue: Number(val.toFixed(2)),
-    commissionEarned: Number(comm.toFixed(2)),
     timestamp: new Date().toISOString(),
     platform: product.platform,
   };
@@ -609,9 +588,6 @@ app.get('/api/analytics', requireOwnerAuth, (req, res) => {
   const uniqueVisitors = new Set(hashedClicks.map(c => c.visitorHash)).size;
   const totalConversions = conversions.length;
   const conversionRate = totalClicks > 0 ? Number(((totalConversions / totalClicks) * 100).toFixed(1)) : 0;
-
-  const estimatedGrossVolume = conversions.reduce((sum, c) => sum + c.orderValue, 0);
-  const estimatedCommission = conversions.reduce((sum, c) => sum + c.commissionEarned, 0);
 
   const clicksToday = getClicksToday();
 
@@ -671,7 +647,6 @@ app.get('/api/analytics', requireOwnerAuth, (req, res) => {
         conversionRate: cr,
         platform: p.platform,
         imageUrl: p.imageUrl,
-        price: p.price,
       };
     })
     .sort((a, b) => b.clicks - a.clicks);
@@ -717,8 +692,6 @@ app.get('/api/analytics', requireOwnerAuth, (req, res) => {
     uniqueVisitors,
     totalConversions,
     conversionRate,
-    estimatedGrossVolume: Number(estimatedGrossVolume.toFixed(2)),
-    estimatedCommission: Number(estimatedCommission.toFixed(2)),
     clicksToday,
     topProducts,
     clicksByDay,
