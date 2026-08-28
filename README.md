@@ -159,7 +159,6 @@ The Owner Hub passcode was previously committed in `.env.example` in git history
 ## 📖 More Documentation
 
 - **[OVERVIEW.md](./OVERVIEW.md)** — full architecture, data model, complete API reference, and known limitations.
-- **[DEPLOYMENT.md](./DEPLOYMENT.md)** — step-by-step guide to deploying on Render, including persistent disk setup for product/click data.
 
 ---
 
