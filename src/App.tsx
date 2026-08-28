@@ -68,8 +68,6 @@ export default function App() {
 
   // Silently re-validate a previously-stored owner key so returning owners
   // aren't re-prompted every visit, without ever trusting localStorage alone.
-  // Also handles the no-OWNER_KEY-configured (dev mode) case, where the
-  // server accepts any value -- including an empty one.
   useEffect(() => {
     const storedKey = getOwnerKey();
     api

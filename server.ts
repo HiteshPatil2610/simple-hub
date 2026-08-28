@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -23,16 +24,13 @@ app.use(express.urlencoded({ extended: true, limit: '12mb' }));
 // The Owner Control Hub (add/edit/delete products, image upload, analytics
 // reset) previously had NO server-side protection at all -- anyone who
 // discovered the API routes (not just the #admin URL) could modify the
-// storefront or wipe analytics. Set OWNER_KEY in your environment to lock
-// these routes down. Without it, the app still runs (useful for local
-// experimentation) but prints a loud warning and leaves the routes open.
-const OWNER_KEY = process.env.OWNER_KEY || '';
+// storefront or wipe analytics. Set OWNER_KEY in the environment before
+// starting the server; protected routes fail closed when it is missing.
+const OWNER_KEY = process.env.OWNER_KEY?.trim() || '';
 
 function requireOwnerAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
   if (!OWNER_KEY) {
-    // No key configured: allow the request through (dev convenience) but
-    // this state should never be used in production.
-    return next();
+    return res.status(503).json({ error: 'Owner authentication is not configured.' });
   }
   const providedKey = req.headers['x-owner-key'];
   if (providedKey && providedKey === OWNER_KEY) {

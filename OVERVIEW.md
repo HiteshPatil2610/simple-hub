@@ -65,7 +65,7 @@ The Owner Control Hub and its underlying API routes are protected by a single sh
 
 - **Client side:** navigating to `/#admin` shows a passcode prompt (`OwnerGate`) before any admin UI renders. The entered key is verified against the server and, once valid, stored in `localStorage` and attached as an `x-owner-key` header on subsequent admin requests.
 - **Server side:** every mutating route — creating/editing/deleting products, image upload, resetting analytics, recording a conversion — is wrapped in a `requireOwnerAuth` middleware that checks the `x-owner-key` header against `OWNER_KEY`. Requests without a valid key get `401 Unauthorized`.
-- **Dev-mode fallback:** if `OWNER_KEY` is left unset, these routes stay open (so local experimentation doesn't require setup) but this state is not safe for any public deployment — always set `OWNER_KEY` before deploying (see [DEPLOYMENT.md](./DEPLOYMENT.md)).
+- **Missing configuration:** if `OWNER_KEY` is left unset, protected routes return `503 Service Unavailable` instead of opening the admin API. Always set it before starting the server (see [DEPLOYMENT.md](./DEPLOYMENT.md)).
 
 Additional hardening in place:
 

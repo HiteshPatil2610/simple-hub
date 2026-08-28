@@ -6,10 +6,7 @@ interface OwnerGateProps {
   onUnlocked: () => void;
 }
 
-// Shown instead of the Owner Control Hub until a valid owner key is
-// provided. If the server has no OWNER_KEY configured, any input value
-// (including empty) is accepted, matching the server's dev-mode fallback --
-// but a warning banner makes that state impossible to miss.
+// Shown instead of the Owner Control Hub until a valid owner key is provided.
 export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked }) => {
   const [value, setValue] = useState('');
   const [error, setError] = useState('');

@@ -136,7 +136,11 @@ Open `http://localhost:3000`. Visit `http://localhost:3000/#admin` and enter you
 - Redirect and click-tracking endpoints are rate-limited per IP.
 - Full details in [OVERVIEW.md](./OVERVIEW.md#3-authentication--security).
 
-> ⚠️ `OWNER_KEY` must be set before deploying anywhere public — without it, the admin API is unauthenticated.
+> ⚠️ `OWNER_KEY` must be set before starting the server. Protected routes fail closed when it is missing.
+
+### Secret rotation warning
+
+The Owner Hub passcode was previously committed in `.env.example` in git history. Rotate that value immediately if it was used anywhere, and use a new `OWNER_KEY` in every deployed environment. Never commit `.env` or real credentials.
 
 ---
 
