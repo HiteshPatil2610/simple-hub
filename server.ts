@@ -7,7 +7,18 @@ import helmet from 'helmet';
 import jwt from 'jsonwebtoken';
 import { createServer as createViteServer } from 'vite';
 import { Product, ClickEvent, ConversionEvent, AnalyticsSummary } from './src/types';
-import { store, migrateFromJsonIfNeeded } from './db';
+import { store, initDb } from './db';
+
+// Wraps an async Express handler so a rejected promise is forwarded to the
+// global error handler instead of crashing the request (Express 4 does not
+// do this automatically for async handlers).
+function asyncHandler(
+  fn: (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<unknown>
+) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
 
 const app = express();
 const configuredPort = Number.parseInt(process.env.PORT || '3000', 10);
@@ -38,8 +49,8 @@ const JWT_EXPIRY = process.env.JWT_EXPIRY || '8h';
 // On first boot with no users, create a default admin account from env vars.
 // OWNER_USER / OWNER_PASS are consumed only once (on first boot) and can be
 // removed from the environment afterward.
-function bootstrapDefaultUser() {
-  if (store.countUsers() === 0) {
+async function bootstrapDefaultUser() {
+  if ((await store.countUsers()) === 0) {
     const username = process.env.OWNER_USER?.trim() || 'admin';
     const password = process.env.OWNER_PASS?.trim();
     if (!password) {
@@ -50,11 +61,11 @@ function bootstrapDefaultUser() {
       }
       // Dev fallback: create a known default and print a warning.
       const devPass = 'changeme';
-      store.createUser(username, devPass, 'owner');
+      await store.createUser(username, devPass, 'owner');
       console.warn(`[AUTH] No users found. Created default dev account: ${username} / ${devPass}`);
       console.warn('[AUTH] Set OWNER_USER and OWNER_PASS env vars to change this before deploying.');
     } else {
-      store.createUser(username, password, 'owner');
+      await store.createUser(username, password, 'owner');
       console.info(`[AUTH] Created initial admin account: ${username}`);
     }
   }
@@ -334,67 +345,51 @@ function validatePlatform(platform: unknown): 'Amazon' {
 }
 
 // =============================================================================
-// BOOT — migrate legacy JSON → SQLite, create default user
-// =============================================================================
-const migration = migrateFromJsonIfNeeded();
-if (migration.migrated) {
-  console.info(
-    `Migrated legacy JSON data into SQLite (${migration.counts.products} products, ` +
-    `${migration.counts.clicks} clicks, ${migration.counts.conversions} conversions).`
-  );
-}
-
-bootstrapDefaultUser();
-
-// =============================================================================
 // ⑦ DATA RETENTION — purge click records older than CLICK_RETENTION_DAYS
 // =============================================================================
 const CLICK_RETENTION_DAYS = Math.max(1, parseInt(process.env.CLICK_RETENTION_DAYS || '90', 10));
 
-function runRetentionPurge() {
-  const deleted = store.deleteClicksOlderThan(CLICK_RETENTION_DAYS);
+async function runRetentionPurge() {
+  const deleted = await store.deleteClicksOlderThan(CLICK_RETENTION_DAYS);
   if (deleted > 0) {
     console.info(`[Retention] Purged ${deleted} click record(s) older than ${CLICK_RETENTION_DAYS} days.`);
   }
 }
-
-// Run once at startup and then every 24 hours.
-runRetentionPurge();
-setInterval(runRetentionPurge, 24 * 60 * 60 * 1000);
 
 // =============================================================================
 // API ENDPOINTS
 // =============================================================================
 
 // Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), productCount: store.listProducts().length });
-});
+app.get('/api/health', asyncHandler(async (req, res) => {
+  const products = await store.listProducts();
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), productCount: products.length });
+}));
 
 // ---- ④ AUTHENTICATION ----
 
 // POST /api/auth/login — exchange username+password for a JWT
-app.post('/api/auth/login', loginLimiter, (req, res) => {
+app.post('/api/auth/login', loginLimiter, asyncHandler(async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password || typeof username !== 'string' || typeof password !== 'string') {
     return sendError(res, 400, 'username and password are required.');
   }
 
-  const user = store.getUserByUsername(username.trim());
+  const user = await store.getUserByUsername(username.trim());
   if (!user || !store.verifyPassword(password, user.passwordHash, user.salt)) {
     return sendError(res, 401, 'Invalid username or password.');
   }
 
   const token = signToken(user.id, user.role);
   res.json({ token, username: user.username, role: user.role, expiresIn: JWT_EXPIRY });
-});
+}));
 
 // GET /api/auth/me — return the currently authenticated user
-app.get('/api/auth/me', requireAuth, (req, res) => {
-  const user = store.getUserById(res.locals.userId);
+app.get('/api/auth/me', requireAuth, asyncHandler(async (req, res) => {
+  const user = await store.getUserById(res.locals.userId);
   if (!user) return sendError(res, 404, 'User not found.');
   res.json({ id: user.id, username: user.username, role: user.role });
-});
+}));
 
 // Legacy passcode verify — kept for backwards compatibility with old clients.
 // New clients should use POST /api/auth/login instead.
@@ -418,9 +413,9 @@ app.post('/api/owner/verify', loginLimiter, (req, res) => {
 });
 
 // GET all products
-app.get('/api/products', (req, res) => {
+app.get('/api/products', asyncHandler(async (req, res) => {
   const { category, search, platform, featured } = req.query;
-  let filtered = store.listProducts();
+  let filtered = await store.listProducts();
 
   if (category && category !== 'All') {
     filtered = filtered.filter(p => p.category.toLowerCase() === String(category).toLowerCase());
@@ -446,19 +441,19 @@ app.get('/api/products', (req, res) => {
   }
 
   res.json(filtered);
-});
+}));
 
 // GET single product
-app.get('/api/products/:id', (req, res) => {
-  const product = store.getProduct(req.params.id);
+app.get('/api/products/:id', asyncHandler(async (req, res) => {
+  const product = await store.getProduct(req.params.id);
   if (!product) {
     return sendError(res, 404, 'Product not found');
   }
   res.json(product);
-});
+}));
 
 // POST add product — ② Amazon-only platform validation
-app.post('/api/products', requireAuth, (req, res) => {
+app.post('/api/products', requireAuth, asyncHandler(async (req, res) => {
   const {
     title,
     description,
@@ -502,9 +497,9 @@ app.post('/api/products', requireAuth, (req, res) => {
     createdAt: new Date().toISOString(),
   };
 
-  store.createProduct(newProduct);
+  await store.createProduct(newProduct);
   res.status(201).json(newProduct);
-});
+}));
 
 // Explicit allowlist of updatable product fields.
 const UPDATABLE_PRODUCT_FIELDS = [
@@ -514,8 +509,8 @@ const UPDATABLE_PRODUCT_FIELDS = [
 ] as const;
 
 // PUT update product — ② Amazon-only platform validation
-app.put('/api/products/:id', requireAuth, (req, res) => {
-  const existing = store.getProduct(req.params.id);
+app.put('/api/products/:id', requireAuth, asyncHandler(async (req, res) => {
+  const existing = await store.getProduct(req.params.id);
   if (!existing) {
     return sendError(res, 404, 'Product not found');
   }
@@ -554,22 +549,22 @@ app.put('/api/products/:id', requireAuth, (req, res) => {
   }
   updated.id = existing.id; // id is never overridable
 
-  store.updateProduct(updated);
+  await store.updateProduct(updated);
   res.json(updated);
-});
+}));
 
 // DELETE product
-app.delete('/api/products/:id', requireAuth, (req, res) => {
-  const deleted = store.deleteProduct(req.params.id);
+app.delete('/api/products/:id', requireAuth, asyncHandler(async (req, res) => {
+  const deleted = await store.deleteProduct(req.params.id);
   if (!deleted) {
     return sendError(res, 404, 'Product not found');
   }
   res.json({ success: true, message: 'Product deleted' });
-});
+}));
 
 // REDIRECT ENDPOINT: /api/redirect/:id or /r/:id
-app.get(['/api/redirect/:id', '/r/:id'], redirectLimiter, (req, res) => {
-  const product = store.getProduct(req.params.id);
+app.get(['/api/redirect/:id', '/r/:id'], redirectLimiter, asyncHandler(async (req, res) => {
+  const product = await store.getProduct(req.params.id);
   if (!product) {
     return sendError(res, 404, 'Product link not found.');
   }
@@ -606,19 +601,19 @@ app.get(['/api/redirect/:id', '/r/:id'], redirectLimiter, (req, res) => {
     visitorHash: getVisitorHash(req),
   };
 
-  store.createClick(clickEvent);
+  await store.createClick(clickEvent);
 
   if (req.query.format === 'json') {
     return res.json({ success: true, clickId: clickEvent.id, destinationUrl: finalUrl });
   }
 
   res.redirect(302, finalUrl);
-});
+}));
 
 // CLIENT TRACKING BEACON
-app.post('/api/track/click', trackLimiter, (req, res) => {
+app.post('/api/track/click', trackLimiter, asyncHandler(async (req, res) => {
   const { productId, utmSource, utmMedium, utmCampaign, subid, referrer } = req.body;
-  const product = store.getProduct(productId);
+  const product = await store.getProduct(productId);
 
   if (!product) {
     return sendError(res, 404, 'Product not found');
@@ -648,15 +643,15 @@ app.post('/api/track/click', trackLimiter, (req, res) => {
     visitorHash: getVisitorHash(req),
   };
 
-  store.createClick(clickEvent);
+  await store.createClick(clickEvent);
 
   res.json({ success: true, clickId: clickEvent.id, destinationUrl: finalUrl });
-});
+}));
 
 // MANUAL CONVERSION RECORD (owner-initiated)
-app.post('/api/analytics/conversion', requireAuth, (req, res) => {
+app.post('/api/analytics/conversion', requireAuth, asyncHandler(async (req, res) => {
   const { productId, clickId } = req.body;
-  const product = store.getProduct(productId);
+  const product = await store.getProduct(productId);
 
   if (!product) {
     return sendError(res, 404, 'Product not found');
@@ -671,9 +666,9 @@ app.post('/api/analytics/conversion', requireAuth, (req, res) => {
     platform: product.platform,
   };
 
-  store.createConversion(convEvent);
+  await store.createConversion(convEvent);
   res.status(201).json(convEvent);
-});
+}));
 
 // =============================================================================
 // ⑥ CONVERSION WEBHOOK — accepts signed payloads from affiliate networks
@@ -686,7 +681,7 @@ app.post('/api/analytics/conversion', requireAuth, (req, res) => {
 // conversions manually via POST /api/analytics/conversion instead.
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET?.trim() || '';
 
-app.post('/api/webhooks/conversion', webhookLimiter, express.raw({ type: 'application/json', limit: '1mb' }), (req, res) => {
+app.post('/api/webhooks/conversion', webhookLimiter, express.raw({ type: 'application/json', limit: '1mb' }), asyncHandler(async (req, res) => {
   if (!WEBHOOK_SECRET) {
     return sendError(res, 503, 'Webhook endpoint is not configured (WEBHOOK_SECRET not set).');
   }
@@ -736,35 +731,36 @@ app.post('/api/webhooks/conversion', webhookLimiter, express.raw({ type: 'applic
     platform,
   };
 
-  store.createConversion(convEvent);
+  await store.createConversion(convEvent);
   console.info(`[Webhook] Recorded conversion for product ${productId}`);
   res.status(201).json({ success: true, conversionId: convEvent.id });
-});
+}));
 
 // =============================================================================
 // ANALYTICS
 // =============================================================================
-function getClicksToday(): number {
+async function getClicksToday(): Promise<number> {
   const todayStr = new Date().toISOString().split('T')[0];
-  return store.listClicks().filter(c => c.timestamp.startsWith(todayStr)).length;
+  const clicks = await store.listClicks();
+  return clicks.filter(c => c.timestamp.startsWith(todayStr)).length;
 }
 
 // Public analytics — aggregate only, no PII.
-app.get('/api/analytics/public', (req, res) => {
-  res.json({ clicksToday: getClicksToday() });
-});
+app.get('/api/analytics/public', asyncHandler(async (req, res) => {
+  res.json({ clicksToday: await getClicksToday() });
+}));
 
 // Full analytics — owner-only.
-app.get('/api/analytics', requireAuth, (req, res) => {
-  const clicks      = store.listClicks();
-  const conversions = store.listConversions();
-  const products    = store.listProducts();
+app.get('/api/analytics', requireAuth, asyncHandler(async (req, res) => {
+  const clicks      = await store.listClicks();
+  const conversions = await store.listConversions();
+  const products    = await store.listProducts();
 
-  const totalClicks      = store.countTotalClicks();
-  const uniqueVisitors   = store.countDistinctVisitors();
-  const totalConversions = store.countTotalConversions();
+  const totalClicks      = await store.countTotalClicks();
+  const uniqueVisitors   = await store.countDistinctVisitors();
+  const totalConversions = await store.countTotalConversions();
   const conversionRate   = totalClicks > 0 ? Number(((totalConversions / totalClicks) * 100).toFixed(1)) : 0;
-  const clicksToday      = getClicksToday();
+  const clicksToday      = await getClicksToday();
 
   // Clicks by day (last 14 days)
   const daysMap = new Map<string, { clicks: number; conversions: number }>();
@@ -843,18 +839,18 @@ app.get('/api/analytics', requireAuth, (req, res) => {
     platformBreakdown: Object.entries(platformCounts).map(([platform, count]) => ({ platform, clicks: count, percentage: toPct(count) })),
     categoryBreakdown: Object.entries(categoryCounts).map(([category, count]) => ({ category, clicks: count, percentage: toPct(count) })),
     deviceBreakdown:   Object.entries(deviceCounts).map(([device,   count]) => ({ device,   clicks: count, percentage: toPct(count) })),
-    recentClicks: store.recentClicks(50).map(({ visitorHash, ...click }) => click),
+    recentClicks: (await store.recentClicks(50)).map(({ visitorHash, ...click }) => click),
   };
 
   res.json(summary);
-});
+}));
 
 // RESET ANALYTICS
-app.post('/api/analytics/reset', requireAuth, (req, res) => {
-  store.deleteAllClicks();
-  store.deleteAllConversions();
+app.post('/api/analytics/reset', requireAuth, asyncHandler(async (req, res) => {
+  await store.deleteAllClicks();
+  await store.deleteAllConversions();
   res.json({ success: true, message: 'Analytics reset to empty live data' });
-});
+}));
 
 // =============================================================================
 // GLOBAL ERROR HANDLER
@@ -870,6 +866,20 @@ app.use((err: unknown, req: express.Request, res: express.Response, next: expres
 // VITE INTEGRATION
 // =============================================================================
 async function startServer() {
+  // =============================================================================
+  // BOOT — connect to Postgres, create schema, bootstrap first admin user
+  // =============================================================================
+  await initDb();
+  console.info('[DB] Connected to Postgres and verified schema.');
+
+  await bootstrapDefaultUser();
+
+  // Run the retention purge once at startup and then every 24 hours.
+  await runRetentionPurge();
+  setInterval(() => {
+    runRetentionPurge().catch((err) => console.error('[Retention] Purge failed:', err));
+  }, 24 * 60 * 60 * 1000);
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
