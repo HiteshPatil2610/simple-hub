@@ -17,9 +17,9 @@ Raccoon Hub lets content creators, curators, and niche site owners share hand-pi
 - **Curated storefront** — a responsive card grid with real-time search and category filters. Products are entered by the owner and displayed with image, title, description, category, and a "View on Amazon" button.
 - **Amazon-only affiliate links** — paste any `amazon.com/dp/...` link or `amzn.to/...` short link; affiliate tags and UTM parameters are applied automatically. Only Amazon platform is supported.
 - **Server-side redirect & telemetry** — every outbound click routes through a tracking endpoint that logs timestamp, device type, referrer, and UTM data *before* forwarding the visitor, with no client-side delay.
-- **Owner Control Hub** — a username + password–gated admin panel to add/edit/delete products, upload images straight from your device, and review analytics.
+- **Owner Control Hub** — an email + password–gated admin panel to add/edit/delete products, upload images straight from your device, and review analytics.
 - **Live analytics** — total clicks, real (hashed, anonymous) unique visitors, a 14-day trend graph, a product leaderboard, a searchable click stream, and CSV export. New deployments start empty and populate only from real activity.
-- **Multi-user JWT auth** — secure username + password login; passwords hashed with `crypto.scrypt`; sessions stored as short-lived JWTs (default 8 h).
+- **Multi-admin auth, no external service** — admin accounts (email + password) are defined via one `ADMIN_ACCOUNTS` env var; passwords are hashed with `crypto.scrypt` before storage; sessions are short-lived JWTs (default 8 h). No third-party auth provider, no OAuth, no self-service sign-up.
 - **Conversion webhooks** — `POST /api/webhooks/conversion` accepts HMAC-signed payloads from affiliate networks (Impact, CJ, ShareASale).
 - **Automatic data retention** — click records older than `CLICK_RETENTION_DAYS` (default 90 days) are purged on startup and daily.
 - **Secured by default** — every mutating admin route requires a valid JWT, uploads are type/size/magic-bytes validated, and click endpoints are rate-limited.
@@ -32,7 +32,7 @@ Raccoon Hub lets content creators, curators, and niche site owners share hand-pi
 ```
 [Store Owner]
       │
-      ├─► Logs in to Owner Hub (/#admin) with username + password → receives JWT
+      ├─► Logs in to Owner Hub (/#admin) with email + password → receives JWT
       ├─► Adds/edits a product — title, description, category (Amazon only)
       ├─► Uploads a product photo (magic-bytes validated, max 8 MB)
       └─► Pastes a direct Amazon affiliate link
@@ -67,7 +67,7 @@ Raccoon Hub lets content creators, curators, and niche site owners share hand-pi
 |---|---|
 | Frontend | React 19 · Vite 6 · Tailwind CSS 4 · Motion (animations) · Recharts · Lucide icons |
 | Backend  | Express 4 · TypeScript · `jsonwebtoken` · `tsx` (dev) / `esbuild` (production) |
-| Database | SQLite via Node's built-in `node:sqlite` — single file, no external DB server |
+| Database | Postgres (e.g. free Neon) via `pg` — networked, survives redeploys/restarts |
 | Testing  | Node's built-in `node:test` — 16 tests, zero extra test dependencies |
 
 ---
@@ -76,10 +76,9 @@ Raccoon Hub lets content creators, curators, and niche site owners share hand-pi
 
 ```
 ├── server.ts                        # Express API — JWT auth, redirects, webhooks, retention
-├── db.ts                            # SQLite schema + data-access layer + user management
+├── db.ts                            # Postgres schema + data-access layer + user management
 ├── index.html                       # Vite entry HTML
-├── data/                            # Persisted SQLite DB (products, clicks, conversions, users)
-├── public/uploads/                  # Uploaded product images
+├── public/uploads/                  # Uploaded product images (local disk — see Security note)
 ├── tests/
 │   └── db.test.ts                   # Automated test suite (16 tests — node:test)
 ├── src/
@@ -92,7 +91,7 @@ Raccoon Hub lets content creators, curators, and niche site owners share hand-pi
 │       ├── ProductAdminModal.tsx    # Add/edit product form + image upload
 │       ├── OwnerProductManager.tsx  # Product management UI
 │       ├── AnalyticsDashboard.tsx   # Records & Clicks tab
-│       ├── OwnerGate.tsx            # Username + password login form (JWT)
+│       ├── OwnerGate.tsx            # Email + password login form (JWT)
 │       └── RedirectNotification.tsx
 ├── .env.example                     # Environment variable template
 ├── README.md                        # You are here
@@ -104,7 +103,7 @@ Raccoon Hub lets content creators, curators, and niche site owners share hand-pi
 
 ## 🚀 Getting Started
 
-**Prerequisites:** Node.js 22.5+
+**Prerequisites:** Node.js 18+, a Postgres database (e.g. a free [Neon](https://neon.tech) project)
 
 ```bash
 # 1. Clone and install
@@ -116,7 +115,7 @@ npm install
 cp .env.example .env
 ```
 
-Generate a JWT secret and set your initial admin credentials in `.env`:
+Generate a JWT secret and define your admin accounts in `.env`:
 
 ```bash
 # Generate JWT_SECRET
@@ -125,9 +124,9 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 Edit `.env`:
 ```env
+DATABASE_URL=<your Postgres connection string, e.g. from Neon>
 JWT_SECRET=<paste generated secret>
-OWNER_USER=admin
-OWNER_PASS=<your strong password>
+ADMIN_ACCOUNTS=you@example.com:choose-a-strong-password
 ```
 
 ```bash
@@ -135,9 +134,9 @@ OWNER_PASS=<your strong password>
 npm run dev
 ```
 
-Open `http://localhost:3000`. Visit `http://localhost:3000/#admin` and sign in with your `OWNER_USER` / `OWNER_PASS` to reach the Owner Control Hub.
+Open `http://localhost:3000`. Visit `http://localhost:3000/#admin` and sign in with one of the email/password pairs from `ADMIN_ACCOUNTS` to reach the Owner Control Hub.
 
-> ℹ️ On first boot the server creates an initial admin account from `OWNER_USER` / `OWNER_PASS` and prints a confirmation to the console. You can remove those env vars after the first login.
+> ℹ️ On every boot, each `email:password` pair listed in `ADMIN_ACCOUNTS` is created if it doesn't exist yet, or has its stored password hash updated to match if it does. Add more people by adding more comma-separated pairs; rotate a password by editing it and redeploying. Only the salted hash is ever written to the database — the env var is a source of truth for boot-time syncing, not persistent storage of the plaintext.
 
 ### Scripts
 
@@ -153,8 +152,8 @@ Open `http://localhost:3000`. Visit `http://localhost:3000/#admin` and sign in w
 
 ## 🔐 Security
 
-- **Multi-user JWT auth** — the Owner Control Hub and every mutating API route require a valid `Authorization: Bearer <token>` header. Login via `POST /api/auth/login`.
-- **Passwords** — hashed with `crypto.scrypt` (64-byte key, random salt per user). Never stored in plaintext.
+- **Multi-admin JWT auth, no external service** — the Owner Control Hub and every mutating API route require a valid `Authorization: Bearer <token>` header. Login via `POST /api/auth/login`. Accounts are defined entirely by the `ADMIN_ACCOUNTS` env var (see Getting Started) — no self-service sign-up, no third-party auth provider.
+- **Passwords** — hashed with `crypto.scrypt` (64-byte key, random salt per user). Never stored in plaintext; only the hash lives in the database.
 - **Image uploads** — restricted to JPG/PNG/GIF/WEBP (no SVG), capped at 8 MB, **magic bytes verified** (actual file content must match declared MIME type), randomized filenames.
 - **Platform restriction** — only Amazon affiliate links are accepted. Non-Amazon platform values are rejected at the API level.
 - **Redirect & click-tracking endpoints** — rate-limited per IP.
@@ -170,10 +169,11 @@ Open `http://localhost:3000`. Visit `http://localhost:3000/#admin` and sign in w
 | Item | Status |
 |---|---|
 | `JWT_SECRET` set in production environment | Required |
-| `OWNER_USER` / `OWNER_PASS` set for first-boot bootstrap | Required (removable after first login) |
-| `DATA_DIR` / `UPLOADS_DIR` pointing to persistent volume | Required for data survival across redeploys |
+| `DATABASE_URL` pointing to a reachable Postgres instance (e.g. Neon) | Required |
+| `ADMIN_ACCOUNTS` set with at least one `email:password` pair | Required |
+| `UPLOADS_DIR` pointing to persistent volume, or images moved to external storage | Recommended — local disk is ephemeral on most PaaS free tiers |
 | HTTPS in front of the server | Required — JWTs must not travel over plain HTTP |
-| Node.js ≥ 22.5 on the host | Required — for built-in `node:sqlite` |
+| Node.js ≥ 18 on the host | Required |
 | Debug code / test routes | PASS — none present |
 | Error handling | PASS — generic messages + correlation ID; details server-side only |
 | Security headers | PASS — Helmet, CSP, HSTS, X-Frame-Options |
@@ -183,7 +183,8 @@ Open `http://localhost:3000`. Visit `http://localhost:3000/#admin` and sign in w
 ### Secret rotation
 
 - Rotate `JWT_SECRET` to invalidate all active sessions (all users will need to re-login).
-- The previous `OWNER_KEY` single-passcode system has been replaced. If the old key was committed in git history, it is now irrelevant — no API route checks it (except the legacy `/api/owner/verify` endpoint for transitional compatibility).
+- Rotate a specific admin's password by editing their entry in `ADMIN_ACCOUNTS` and redeploying.
+- The old `OWNER_KEY` single-passcode system is kept only as a legacy fallback on `POST /api/owner/verify` for old integrations; new logins should always use `POST /api/auth/login`.
 
 ---
 
@@ -214,7 +215,7 @@ npm test
 tests 16 · pass 16 · fail 0
 ```
 
-Tests run against isolated temporary SQLite databases — they never touch `data/raccoon-hub.sqlite`.
+Tests run against their own isolated temporary SQLite database (used purely to replicate the schema logic in a fast, dependency-free way) — they never touch the real production Postgres database.
 
 ---
 

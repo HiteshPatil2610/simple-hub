@@ -26,7 +26,7 @@ The design is a retro-modern neo-brutalist aesthetic — bold typography, playfu
 - After logging, the visitor is forwarded with a standard HTTP 302 redirect — no client-side delay.
 
 ### Owner Control Hub (`/#admin`)
-Gated behind username + password login (see [Authentication](#3-authentication--security)). Once unlocked:
+Gated behind email + password login (see [Authentication](#3-authentication--security)). Once unlocked:
 - **Manage Products** — add, edit, delete listings; upload product photos directly from device storage; switch between list and grid views; one-click "Test Link" and "Copy Link".
 - **Records & Clicks** — real-time totals for clicks and unique visitors, a 14-day trend graph, a product performance leaderboard, a searchable click stream, and CSV export.
 
@@ -37,7 +37,7 @@ Gated behind username + password login (see [Authentication](#3-authentication--
 ```
 [Store Owner]
       │
-      ├─► Logs in to "Owner Hub" (/#admin) with username + password → receives JWT
+      ├─► Logs in to "Owner Hub" (/#admin) with email + password → receives JWT
       ├─► Adds/edits a product (title, description, category) — Amazon only
       ├─► Uploads an image from device storage (/api/upload — magic-bytes validated)
       └─► Pastes a direct Amazon affiliate link
@@ -64,12 +64,12 @@ Gated behind username + password login (see [Authentication](#3-authentication--
 
 ## 3. Authentication & Security
 
-The Owner Control Hub uses **JWT-based multi-user auth** instead of the previous single shared passcode:
+The Owner Control Hub uses **JWT-based multi-admin auth**, with no external auth service or OAuth involved:
 
-- **Login**: `POST /api/auth/login` — accepts `{username, password}`, returns a signed JWT valid for `JWT_EXPIRY` (default 8 h). Passwords are hashed with `crypto.scrypt` (64-byte key, random salt).
+- **Login**: `POST /api/auth/login` — accepts `{username, password}` (the "username" field holds an email address), returns a signed JWT valid for `JWT_EXPIRY` (default 8 h). Passwords are hashed with `crypto.scrypt` (64-byte key, random salt).
 - **Client side**: The JWT is stored in session storage and sent as `Authorization: Bearer <token>` on all admin requests.
 - **Server side**: `requireAuth` middleware validates the JWT signature and expiry using `JWT_SECRET`. All mutating admin routes require a valid token.
-- **Bootstrap**: On first boot with no users, the server creates an initial admin account from `OWNER_USER` / `OWNER_PASS` env vars (defaults to `admin` / `changeme` in development with a warning). After first login, remove or rotate those env vars.
+- **Account provisioning**: Admin accounts are defined entirely by the `ADMIN_ACCOUNTS` env var — a comma-separated list of `email:password` pairs. On every boot, each listed account is created if it doesn't exist, or has its stored password hash updated to match if it does. There is no self-service sign-up route; the only way to become an admin is to be listed in this env var. To revoke someone's access, delete their row from the `users` table directly — removing them from the env var alone does not delete their account.
 - **Legacy compatibility**: The old `x-owner-key` header is still accepted on `POST /api/owner/verify` for existing integrations during transition.
 
 Additional hardening in place:
@@ -99,23 +99,21 @@ Available under **Owner Hub → Records & Clicks**, and via `GET /api/analytics`
 
 ## 5. Data Model
 
-Data persists in a single SQLite database file (`raccoon-hub.sqlite`) inside `DATA_DIR` (default `data/`), accessed through Node's built-in `node:sqlite` module. Unlike the previous flat JSON files, SQLite handles concurrent writes safely with proper write-locking and transactional inserts, so parallel click tracking can no longer lose a write. Set `DATA_DIR` and `UPLOADS_DIR` to persistent-volume paths in production.
+Data persists in a networked Postgres database (e.g. a free [Neon](https://neon.tech) project), accessed via the `pg` client library, connected using `DATABASE_URL`. Unlike a local SQLite file, this survives redeploys, restarts, and instance recycling on ephemeral-filesystem hosts (Render, Railway, etc.) — nothing about persistence depends on the app server's own disk. Product images are still saved to local disk (`UPLOADS_DIR`) and remain subject to that ephemeral-filesystem caveat unless moved to external storage.
 
 | Table | Contents |
 |---|---|
 | `products`    | Product catalog (Amazon platform only) |
 | `clicks`      | Every outbound click event |
 | `conversions` | Recorded conversions (manual or webhook) |
-| `users`       | Admin accounts (username, scrypt password hash, salt, role) |
+| `users`       | Admin accounts (email, scrypt password hash, salt, role) — synced from `ADMIN_ACCOUNTS` on boot |
 
 | Type | Key fields |
 |---|---|
 | `Product`         | `id`, `title`, `description`, `category`, `imageUrl`, `platform` (`'Amazon'`), `affiliateUrl`, `affiliateTag`, `featured` |
 | `ClickEvent`      | `id`, `productId`, `timestamp`, `referrer`, `device`, `utmSource/Medium/Campaign`, `destinationUrl`, `visitorHash` |
 | `ConversionEvent` | `id`, `clickId`, `productId`, `timestamp`, `platform` |
-| `User`            | `id`, `username`, `passwordHash`, `salt`, `role`, `createdAt` |
-
-On the first boot against a fresh database, historical data from the legacy `data/products.json`, `data/clicks.json` and `data/conversions.json` is imported automatically (the migration is idempotent and the JSON files are left in place as a backup). **Requires Node.js ≥ 22.5** for the built-in `node:sqlite` module.
+| `User`            | `id`, `username` (holds an email), `passwordHash`, `salt`, `role`, `createdAt` |
 
 ---
 
@@ -124,7 +122,7 @@ On the first boot against a fresh database, historical data from the legacy `dat
 | Method | Route | Auth | Purpose |
 |---|---|---|---|
 | `GET`  | `/api/health`                  | —   | Health check |
-| `POST` | `/api/auth/login`              | —   | Login with username+password, returns JWT |
+| `POST` | `/api/auth/login`              | —   | Login with email+password (as `{username, password}`), returns JWT |
 | `GET`  | `/api/auth/me`                 | ✅  | Return current authenticated user |
 | `POST` | `/api/owner/verify`            | —   | Legacy passcode verify (backwards-compat) |
 | `GET`  | `/api/products`                | —   | List products (`?category=`, `?search=`, `?platform=`, `?featured=`) |
@@ -152,7 +150,7 @@ HMAC = requires a valid `X-Webhook-Signature: sha256=<hmac>` header (HMAC-SHA256
 |---|---|
 | Frontend | React 19, Vite 6, Tailwind CSS 4, Motion (animations), Recharts (charts), Lucide (icons) |
 | Backend  | Express 4, TypeScript, `jsonwebtoken`, `tsx` (dev) / `esbuild` (production bundle) |
-| Database | SQLite via Node's built-in `node:sqlite` (`data/raccoon-hub.sqlite`); `public/uploads/` for images |
+| Database | Postgres (e.g. free Neon) via `pg`; `public/uploads/` for images |
 | Testing  | Node's built-in `node:test` runner — `npm test` runs 16 tests, 0 dependencies |
 
 ---
@@ -161,11 +159,10 @@ HMAC = requires a valid `X-Webhook-Signature: sha256=<hmac>` header (HMAC-SHA256
 
 ```
 ├── server.ts                        # Express API, JWT auth, redirects, webhooks, retention scheduler
-├── db.ts                            # SQLite schema + data-access layer + user management + JSON migration
+├── db.ts                            # Postgres schema + data-access layer + user management
 ├── index.html                       # Vite entry HTML
 ├── metadata.json                    # Project metadata (name: "Simple Hub")
-├── data/                            # Persisted SQLite DB (products, clicks, conversions, users)
-├── public/uploads/                  # Uploaded product images
+├── public/uploads/                  # Uploaded product images (local disk — see Security note)
 ├── tests/
 │   └── db.test.ts                   # Automated test suite (16 tests — node:test)
 ├── src/
@@ -182,7 +179,7 @@ HMAC = requires a valid `X-Webhook-Signature: sha256=<hmac>` header (HMAC-SHA256
 │       ├── ProductAdminModal.tsx    # Add/edit product form, image upload
 │       ├── OwnerProductManager.tsx  # Product list/grid management UI
 │       ├── AnalyticsDashboard.tsx   # Records & Clicks tab
-│       ├── OwnerGate.tsx            # Username + password login form (JWT)
+│       ├── OwnerGate.tsx            # Email + password login form (JWT)
 │       └── RedirectNotification.tsx # "Opening Amazon..." toast
 ├── .env.example                     # Environment variable template
 ├── README.md                        # Quick start
@@ -196,9 +193,10 @@ HMAC = requires a valid `X-Webhook-Signature: sha256=<hmac>` header (HMAC-SHA256
 
 - **No real affiliate-network webhook.** A generic HMAC-signed `POST /api/webhooks/conversion` endpoint is now available. Amazon Associates has no native real-time webhook API; use the manual `POST /api/analytics/conversion` endpoint after reviewing earnings in Associates Central, or wire the webhook endpoint to a compatible network (Impact, CJ Affiliate, ShareASale).
 - **Seed catalog includes non-Amazon platforms.** The `platform` type is now narrowed to `'Amazon'` only. Non-Amazon products can no longer be created or updated via the API.
-- **Single shared owner passcode.** Replaced with JWT-based multi-user auth (`POST /api/auth/login`). Multiple accounts can be created in the `users` table with distinct roles.
-- **Single SQLite file.** Still the default for solo operators. Switch to PostgreSQL if horizontal scaling is needed (migration path documented in `scripts/migrate-sqlite-to-pg.ts`).
+- **Single shared owner passcode.** Replaced with JWT-based multi-admin auth (`POST /api/auth/login`). Accounts are defined via the `ADMIN_ACCOUNTS` env var, hashed and synced into the `users` table on every boot.
+- **Single SQLite file.** Replaced with a networked Postgres database (e.g. free Neon), which survives redeploys and instance recycling on ephemeral-filesystem hosts — the original motivation for this change.
 - **`@google/genai` dependency.** Already removed from `package.json` — the OVERVIEW was stale.
 - **No data retention rules.** Click records older than `CLICK_RETENTION_DAYS` (default 90 days) are now automatically purged on startup and daily.
 - **No image content validation.** Magic bytes are now checked against the declared MIME type to prevent spoofed uploads.
 - **No automated test suite.** `npm test` now runs `tests/db.test.ts` covering CRUD, retention, conversions, and magic bytes validation.
+- **Product images still on local disk.** `UPLOADS_DIR` is not covered by the Postgres migration above — on ephemeral-filesystem hosts, uploaded images are still lost on redeploy unless moved to a persistent volume or external storage (e.g. Cloudinary, S3-compatible storage).
