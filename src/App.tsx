@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, Flame, ArrowUpDown, ShoppingBag, LayoutDashboard, BarChart3, Plus, Package, LayoutGrid, Grid, ArrowDown } from 'lucide-react';
 import { Product, AnalyticsSummary, ViewMode } from './types';
 import { api, getAuthToken, clearAuthToken } from './services/api';
-import { authClient } from './services/neonAuth';
 import { Navbar } from './components/Navbar';
 import { ProductCard, BentoVariant } from './components/ProductCard';
 import { ProductDetailModal } from './components/ProductDetailModal';
@@ -67,7 +66,6 @@ export default function App() {
   // Owner Hub access gate
   const [isOwnerAuthed, setIsOwnerAuthed] = useState(false);
   const [isCheckingOwnerAuth, setIsCheckingOwnerAuth] = useState(true);
-  const [authMethod, setAuthMethod] = useState<'email' | 'google' | null>(null);
 
   // Initial load & URL Hash listener
   useEffect(() => {
@@ -298,11 +296,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (authMethod === 'google') {
-                        authClient.signOut().catch(() => {});
-                      }
                       clearAuthToken();
-                      setAuthMethod(null);
                       setIsOwnerAuthed(false);
                     }}
                     className="text-[10px] font-black uppercase tracking-wider text-[#2D3436]/60 hover:text-[#FF6B6B] underline"
@@ -348,8 +342,7 @@ export default function App() {
                 <div className="py-16 text-center text-sm font-bold text-[#2D3436]/60">Checking access…</div>
               ) : !isOwnerAuthed ? (
                 <OwnerGate
-                  onUnlocked={(method) => {
-                    setAuthMethod(method);
+                  onUnlocked={() => {
                     setIsOwnerAuthed(true);
                     refreshAnalytics();
                   }}

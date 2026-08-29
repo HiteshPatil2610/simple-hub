@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import { Pool } from 'pg';
+import crypto from 'crypto';
+import { Pool, type PoolClient } from 'pg';
 import { Product, ClickEvent, ConversionEvent } from './src/types';
 
 // Postgres-backed persistence layer (designed for Neon's free serverless
@@ -281,10 +282,52 @@ export const store = {
     return Number(rows[0].c);
   },
 
-  // Note: admin authentication is now handled entirely by Neon Auth (Managed
-  // Better Auth) — see requireAdmin() in server.ts. The old `users` table
-  // (username/password/scrypt) above is no longer used for auth and is kept
-  // only so existing rows aren't silently dropped; it's safe to ignore.
+  // ---- user management (multi-user auth) ----
+  async getUserByUsername(username: string): Promise<{ id: string; username: string; passwordHash: string; salt: string; role: string } | undefined> {
+    const { rows } = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    return rows[0];
+  },
+
+  async getUserById(id: string): Promise<{ id: string; username: string; role: string } | undefined> {
+    const { rows } = await pool.query('SELECT id, username, role FROM users WHERE id = $1', [id]);
+    return rows[0];
+  },
+
+  async listUsers(): Promise<{ id: string; username: string; role: string; createdAt: string }[]> {
+    const { rows } = await pool.query('SELECT id, username, role, "createdAt" FROM users ORDER BY "createdAt" ASC');
+    return rows;
+  },
+
+  async countUsers(): Promise<number> {
+    const { rows } = await pool.query('SELECT COUNT(*) AS c FROM users');
+    return Number(rows[0].c);
+  },
+
+  // Hash a plaintext password using scrypt (unchanged — this is local CPU work, not a DB call).
+  hashPassword(password: string): { hash: string; salt: string } {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+    return { hash, salt };
+  },
+
+  verifyPassword(password: string, hash: string, salt: string): boolean {
+    try {
+      const derived = crypto.scryptSync(password, salt, 64).toString('hex');
+      return crypto.timingSafeEqual(Buffer.from(derived, 'hex'), Buffer.from(hash, 'hex'));
+    } catch {
+      return false;
+    }
+  },
+
+  async createUser(username: string, password: string, role = 'owner'): Promise<{ id: string; username: string; role: string }> {
+    const id = `user-${Date.now()}`;
+    const { hash, salt } = store.hashPassword(password);
+    await pool.query(
+      'INSERT INTO users (id, username, "passwordHash", salt, role, "createdAt") VALUES ($1,$2,$3,$4,$5,$6)',
+      [id, username, hash, salt, role, new Date().toISOString()]
+    );
+    return { id, username, role };
+  },
 };
 
 // Close the pool cleanly on process exit.

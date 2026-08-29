@@ -30,9 +30,30 @@ function authHeaders(): Record<string, string> {
 }
 
 export const api = {
-  // Auth (email/password + Google) is handled by Neon Auth directly — see
-  // src/services/neonAuth.ts and OwnerGate.tsx. This api module only stores
-  // the resulting JWT (via setAuthToken) and attaches it to requests.
+  // ④ Login with username + password, returns JWT token.
+  async login(username: string, password: string): Promise<{ token: string; username: string; role: string }> {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Login failed');
+    }
+    const data = await res.json();
+    setAuthToken(data.token);
+    return data;
+  },
+
+  // Legacy passcode verify — kept for compatibility. New code should use login().
+  async verifyOwnerKey(key: string): Promise<boolean> {
+    const res = await fetch('/api/owner/verify', {
+      method: 'POST',
+      headers: { 'x-owner-key': key },
+    });
+    return res.ok;
+  },
 
   // Products
   async getProducts(params?: { category?: string; search?: string; platform?: string }): Promise<Product[]> {
