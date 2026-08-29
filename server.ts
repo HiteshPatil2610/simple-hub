@@ -106,6 +106,11 @@ async function requireAdmin(req: express.Request, res: express.Response, next: e
 // =============================================================================
 // SECURITY MIDDLEWARE
 // =============================================================================
+// The Content-Security-Policy needs to explicitly allow the browser to talk
+// to Neon Auth (Managed Better Auth) directly for sign-in/session calls —
+// derived from NEON_AUTH_JWKS_URL so it stays correct without a separate var.
+const NEON_AUTH_ORIGIN = new URL(NEON_AUTH_JWKS_URL).origin;
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -116,7 +121,7 @@ app.use(helmet({
       scriptSrc: IS_PRODUCTION ? ["'self'"] : ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
       imgSrc: ["'self'", 'data:', 'https:'],
-      connectSrc: ["'self'", 'ws:'],
+      connectSrc: ["'self'", 'ws:', NEON_AUTH_ORIGIN],
       fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
     },
   },
