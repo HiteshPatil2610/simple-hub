@@ -67,6 +67,7 @@ export default function App() {
   // Owner Hub access gate
   const [isOwnerAuthed, setIsOwnerAuthed] = useState(false);
   const [isCheckingOwnerAuth, setIsCheckingOwnerAuth] = useState(true);
+  const [authMethod, setAuthMethod] = useState<'email' | 'google' | null>(null);
 
   // Initial load & URL Hash listener
   useEffect(() => {
@@ -297,8 +298,11 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      authClient.signOut().catch(() => {});
+                      if (authMethod === 'google') {
+                        authClient.signOut().catch(() => {});
+                      }
                       clearAuthToken();
+                      setAuthMethod(null);
                       setIsOwnerAuthed(false);
                     }}
                     className="text-[10px] font-black uppercase tracking-wider text-[#2D3436]/60 hover:text-[#FF6B6B] underline"
@@ -344,7 +348,8 @@ export default function App() {
                 <div className="py-16 text-center text-sm font-bold text-[#2D3436]/60">Checking access…</div>
               ) : !isOwnerAuthed ? (
                 <OwnerGate
-                  onUnlocked={() => {
+                  onUnlocked={(method) => {
+                    setAuthMethod(method);
                     setIsOwnerAuthed(true);
                     refreshAnalytics();
                   }}
