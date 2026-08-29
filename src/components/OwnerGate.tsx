@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Lock, ShieldCheck, Mail } from 'lucide-react';
 import { setAuthToken } from '../services/api';
 import { authClient, getNeonAuthJWT } from '../services/neonAuth';
@@ -8,9 +8,13 @@ interface OwnerGateProps {
 }
 
 // Sign-in for the Owner Hub, backed by Neon Auth (Managed Better Auth).
-// Supports email+password and Google sign-in. Anyone can authenticate with
-// Neon Auth itself, but the server only grants Owner Hub access to emails on
-// its admin allow-list (checked via /api/auth/me after we get a token here).
+// Email/password goes through our own server (POST /api/auth/email/*) —
+// same-origin, no cross-domain browser calls involved at all. Google goes
+// through the browser SDK directly, since OAuth requires a real redirect to
+// Google's consent screen; on return, we pick the session back up via the
+// cookie-authenticated /token endpoint.
+// Either way, the server only actually grants Owner Hub access to emails on
+// its admin allow-list — anyone can authenticate, not everyone gets in.
 export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked }) => {
   const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
   const [email, setEmail] = useState('');
@@ -19,18 +23,11 @@ export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked }) => {
   const [error, setError] = useState('');
   const [isChecking, setIsChecking] = useState(false);
 
-  // After any successful Neon Auth authentication, confirm with our own
-  // server that this email is actually on the admin allow-list before
-  // unlocking the Owner Hub.
-  const finishLogin = async () => {
-    const token = await getNeonAuthJWT();
-    if (!token) {
-      setError('Signed in, but could not retrieve a session token. Please try again.');
-      return;
-    }
+  // Confirms a token with our server (checks the admin allow-list) and, if
+  // approved, stores it and unlocks the Owner Hub.
+  const finishLogin = async (token: string) => {
     const res = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) {
-      await authClient.signOut();
       if (res.status === 403) {
         setError('This account is not approved for Owner Hub access.');
       } else {
@@ -42,17 +39,33 @@ export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked }) => {
     onUnlocked();
   };
 
+  // On mount, check whether we just landed back here after a Google
+  // redirect (a valid Neon Auth session cookie will already exist).
+  useEffect(() => {
+    (async () => {
+      const token = await getNeonAuthJWT();
+      if (token) await finishLogin(token);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsChecking(true);
     setError('');
     try {
-      if (mode === 'sign-up') {
-        await authClient.signUp.email({ email: email.trim(), password, name: name.trim() || email.trim() });
-      } else {
-        await authClient.signIn.email({ email: email.trim(), password });
+      const endpoint = mode === 'sign-up' ? '/api/auth/email/signup' : '/api/auth/email/signin';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password, name: name.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.token) {
+        setError(data.error || 'Could not sign in. Please try again.');
+        return;
       }
-      await finishLogin();
+      await finishLogin(data.token);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not sign in. Please try again.');
     } finally {
@@ -63,8 +76,8 @@ export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked }) => {
   const handleGoogleSignIn = async () => {
     setError('');
     try {
-      // Redirects to Google; on return, App.tsx's session check on mount
-      // (via /api/auth/me) picks the session back up.
+      // Redirects to Google; on return, the useEffect above picks the
+      // session back up automatically.
       await authClient.signIn.social({ provider: 'google', callbackURL: window.location.href });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Google sign-in failed. Please try again.');

@@ -16,16 +16,12 @@ export const authClient = createAuthClient(NEON_AUTH_BASE_URL || '');
 
 // Returns the current session's JWT, used to authenticate requests to our
 // own Express API (verified server-side against Neon Auth's JWKS endpoint).
-//
-// Better Auth's JWT plugin documents two ways to get a token: reading the
-// `set-auth-jwt` response header off getSession() (known to be unreliable —
-// browsers strip custom response headers cross-origin unless explicitly
-// exposed, see better-auth/better-auth#1835), or calling the dedicated
-// /token endpoint directly. We use the latter — it's the officially
-// recommended approach for exactly this case (a separate backend consuming
-// the JWT). credentials: 'include' is required since the auth service lives
-// on a different origin than this app; it relies on that origin being
-// registered as a trusted domain in the Neon Auth config.
+// This is ONLY needed for the Google sign-in flow — email/password gets its
+// token directly from our own server (see OwnerGate.tsx), sidestepping this
+// entirely. For Google, after the OAuth redirect completes, the browser
+// holds a valid Neon Auth session cookie; this calls Better Auth's real JWT
+// plugin endpoint (GET /token, cookie-authenticated) to exchange it for a
+// bearer token our backend can verify.
 export async function getNeonAuthJWT(): Promise<string | null> {
   if (!NEON_AUTH_BASE_URL) return null;
   try {

@@ -5,6 +5,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import helmet from 'helmet';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
+import { createAuthClient } from '@neondatabase/auth';
 import { createServer as createViteServer } from 'vite';
 import { Product, ClickEvent, ConversionEvent, AnalyticsSummary } from './src/types';
 import { store, initDb, pool } from './db';
@@ -102,6 +103,20 @@ async function requireAdmin(req: express.Request, res: express.Response, next: e
   res.locals.user = { id: user.id, email: user.email, name: user.name };
   next();
 }
+
+// Server-side Neon Auth client, used ONLY for email/password sign-in/sign-up.
+// This follows Neon's documented Node.js backend pattern: the browser talks
+// to OUR server (same-origin, no CORS/CSP concerns at all), and this server
+// talks to Neon Auth directly. Google sign-in still happens client-side (it
+// requires a real browser redirect to Google's consent screen) — see
+// src/services/neonAuth.ts.
+const NEON_AUTH_BASE_URL = process.env.NEON_AUTH_BASE_URL?.trim();
+if (!NEON_AUTH_BASE_URL) {
+  throw new Error(
+    'NEON_AUTH_BASE_URL is not set. Copy the Auth URL from the Neon console (Auth tab).'
+  );
+}
+const serverAuthClient = createAuthClient(NEON_AUTH_BASE_URL);
 
 // =============================================================================
 // SECURITY MIDDLEWARE
@@ -379,10 +394,44 @@ app.get('/api/health', asyncHandler(async (req, res) => {
 }));
 
 // ---- ④ AUTHENTICATION ----
-// Sign-in itself happens client-side against Neon Auth directly. This route
-// just confirms a token is valid and the user is on the admin allow-list —
-// used by the frontend on load to silently re-validate a stored token, and
-// after a fresh sign-in to confirm access before unlocking the Owner Hub.
+// Email/password sign-in and sign-up happen server-to-server (this route
+// calls Neon Auth directly) — the browser never talks to Neon's domain for
+// this flow, avoiding CORS/CSP entirely. Returns a bearer token the frontend
+// then sends on every subsequent request.
+app.post('/api/auth/email/signup', asyncHandler(async (req, res) => {
+  const { email, password, name } = req.body || {};
+  if (!email || !password) {
+    return sendError(res, 400, 'email and password are required.');
+  }
+  const { data, error } = await serverAuthClient.signUp.email({
+    email: String(email).trim(),
+    password: String(password),
+    name: name ? String(name).trim() : String(email).trim(),
+  });
+  if (error || !data?.session?.token) {
+    return sendError(res, 400, error?.message || 'Sign up failed.');
+  }
+  res.json({ token: data.session.token, user: data.user });
+}));
+
+app.post('/api/auth/email/signin', asyncHandler(async (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) {
+    return sendError(res, 400, 'email and password are required.');
+  }
+  const { data, error } = await serverAuthClient.signIn.email({
+    email: String(email).trim(),
+    password: String(password),
+  });
+  if (error || !data?.session?.token) {
+    return sendError(res, 401, error?.message || 'Invalid email or password.');
+  }
+  res.json({ token: data.session.token, user: data.user });
+}));
+
+// Confirms a token is valid and the user is on the admin allow-list — used
+// by the frontend on load to silently re-validate a stored token, and after
+// sign-in (any method) to confirm access before unlocking the Owner Hub.
 app.get('/api/auth/me', requireAdmin, asyncHandler(async (req, res) => {
   res.json(res.locals.user);
 }));
