@@ -46,29 +46,42 @@ const JWT_SECRET = process.env.JWT_SECRET?.trim() || (IS_PRODUCTION
 // Token lifetime: 8 hours by default. Override via JWT_EXPIRY env var.
 const JWT_EXPIRY = process.env.JWT_EXPIRY || '8h';
 
-// On first boot with no users, create a default admin account from env vars.
-// OWNER_USER / OWNER_PASS are consumed only once (on first boot) and can be
-// removed from the environment afterward.
-async function bootstrapDefaultUser() {
-  if ((await store.countUsers()) === 0) {
-    const username = process.env.OWNER_USER?.trim() || 'admin';
-    const password = process.env.OWNER_PASS?.trim();
-    if (!password) {
-      if (IS_PRODUCTION) {
-        throw new Error(
-          'No users exist and OWNER_PASS is not set. Set OWNER_PASS to create the initial admin account.'
-        );
-      }
-      // Dev fallback: create a known default and print a warning.
-      const devPass = 'changeme';
-      await store.createUser(username, devPass, 'owner');
-      console.warn(`[AUTH] No users found. Created default dev account: ${username} / ${devPass}`);
-      console.warn('[AUTH] Set OWNER_USER and OWNER_PASS env vars to change this before deploying.');
-    } else {
-      await store.createUser(username, password, 'owner');
-      console.info(`[AUTH] Created initial admin account: ${username}`);
+// Admin accounts are defined entirely via one env var — no self-service
+// sign-up, no external auth service. Format:
+//   ADMIN_ACCOUNTS=alice@example.com:somepassword,bob@example.com:anotherpassword
+// On every boot, each listed account is created if it doesn't exist yet, or
+// has its password hash updated to match if it does — so rotating a
+// password is just editing this env var and redeploying. The env var itself
+// only ever holds plaintext transiently in memory at boot; only the salted
+// scrypt hash is ever written to the database.
+async function seedAdminAccountsFromEnv() {
+  const raw = process.env.ADMIN_ACCOUNTS?.trim();
+  if (!raw) {
+    if (IS_PRODUCTION && (await store.countUsers()) === 0) {
+      throw new Error(
+        'No users exist and ADMIN_ACCOUNTS is not set. Set ADMIN_ACCOUNTS ' +
+        'as "email:password,email:password" to create admin accounts.'
+      );
     }
+    return;
   }
+
+  const entries = raw.split(',').map(e => e.trim()).filter(Boolean);
+  for (const entry of entries) {
+    const separatorIndex = entry.indexOf(':');
+    if (separatorIndex === -1) {
+      console.warn(`[AUTH] Skipping malformed ADMIN_ACCOUNTS entry (expected email:password): "${entry}"`);
+      continue;
+    }
+    const email = entry.slice(0, separatorIndex).trim().toLowerCase();
+    const password = entry.slice(separatorIndex + 1).trim();
+    if (!email || !password) {
+      console.warn(`[AUTH] Skipping malformed ADMIN_ACCOUNTS entry (empty email or password): "${entry}"`);
+      continue;
+    }
+    await store.upsertUserPassword(email, password, 'owner');
+  }
+  console.info(`[AUTH] Synced ${entries.length} admin account(s) from ADMIN_ACCOUNTS.`);
 }
 
 function signToken(userId: string, role: string): string {
@@ -368,16 +381,18 @@ app.get('/api/health', asyncHandler(async (req, res) => {
 
 // ---- ④ AUTHENTICATION ----
 
-// POST /api/auth/login — exchange username+password for a JWT
+// POST /api/auth/login — exchange email+password for a JWT. Accounts are
+// defined via the ADMIN_ACCOUNTS env var (see seedAdminAccountsFromEnv) —
+// there's no self-service sign-up.
 app.post('/api/auth/login', loginLimiter, asyncHandler(async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password || typeof username !== 'string' || typeof password !== 'string') {
-    return sendError(res, 400, 'username and password are required.');
+    return sendError(res, 400, 'Email and password are required.');
   }
 
-  const user = await store.getUserByUsername(username.trim());
+  const user = await store.getUserByUsername(username.trim().toLowerCase());
   if (!user || !store.verifyPassword(password, user.passwordHash, user.salt)) {
-    return sendError(res, 401, 'Invalid username or password.');
+    return sendError(res, 401, 'Invalid email or password.');
   }
 
   const token = signToken(user.id, user.role);
@@ -872,7 +887,7 @@ async function startServer() {
   await initDb();
   console.info('[DB] Connected to Postgres and verified schema.');
 
-  await bootstrapDefaultUser();
+  await seedAdminAccountsFromEnv();
 
   // Run the retention purge once at startup and then every 24 hours.
   await runRetentionPurge();

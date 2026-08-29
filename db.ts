@@ -328,6 +328,24 @@ export const store = {
     );
     return { id, username, role };
   },
+
+  // Insert a user if the username doesn't exist yet, or update their password
+  // hash if it does. Used to sync admin accounts from an env var on boot —
+  // the env var stays the source of truth, so editing a password there and
+  // redeploying rotates it without any manual DB work.
+  async upsertUserPassword(username: string, password: string, role = 'owner'): Promise<void> {
+    const { hash, salt } = store.hashPassword(password);
+    const existing = await store.getUserByUsername(username);
+    if (existing) {
+      await pool.query('UPDATE users SET "passwordHash" = $1, salt = $2 WHERE id = $3', [hash, salt, existing.id]);
+    } else {
+      const id = `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await pool.query(
+        'INSERT INTO users (id, username, "passwordHash", salt, role, "createdAt") VALUES ($1,$2,$3,$4,$5,$6)',
+        [id, username, hash, salt, role, new Date().toISOString()]
+      );
+    }
+  },
 };
 
 // Close the pool cleanly on process exit.
