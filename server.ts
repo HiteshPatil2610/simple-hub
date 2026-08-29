@@ -4,10 +4,10 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import helmet from 'helmet';
-import jwt from 'jsonwebtoken';
+import { jwtVerify, createRemoteJWKSet } from 'jose';
 import { createServer as createViteServer } from 'vite';
 import { Product, ClickEvent, ConversionEvent, AnalyticsSummary } from './src/types';
-import { store, initDb } from './db';
+import { store, initDb, pool } from './db';
 
 // Wraps an async Express handler so a rejected promise is forwarded to the
 // global error handler instead of crashing the request (Express 4 does not
@@ -33,67 +33,75 @@ app.use(express.json({ limit: '12mb' }));
 app.use(express.urlencoded({ extended: true, limit: '12mb' }));
 
 // =============================================================================
-// JWT AUTH (replaces single shared OWNER_KEY)
+// NEON AUTH (Managed Better Auth) — replaces the previous custom JWT/password
+// system. Sign-in itself (email+password, Google OAuth) is handled entirely
+// by Neon's hosted auth service; the frontend talks to it directly via the
+// @neondatabase/auth client SDK. This server's only job is:
+//   1. Verify the JWT the frontend sends us, against Neon Auth's public JWKS.
+//   2. Look up that verified user in the neon_auth.user table (synced live
+//      into this same Postgres database) to get their email.
+//   3. Check that email against an admin allow-list — Neon Auth signup is
+//      open by default, so this allow-list is what actually restricts who
+//      gets into the Owner Hub.
 // =============================================================================
-// JWT_SECRET is used to sign and verify JSON Web Tokens. Must be set in
-// production. Defaults to a random per-process secret in development (which
-// means tokens are invalidated on restart — acceptable for local dev).
-const JWT_SECRET = process.env.JWT_SECRET?.trim() || (IS_PRODUCTION
-  ? (() => { throw new Error('JWT_SECRET must be set in production.'); })()
-  : crypto.randomBytes(32).toString('hex')
+const NEON_AUTH_JWKS_URL = process.env.NEON_AUTH_JWKS_URL?.trim();
+if (!NEON_AUTH_JWKS_URL) {
+  throw new Error(
+    'NEON_AUTH_JWKS_URL is not set. Copy it from the Neon console (Auth tab) or the ' +
+    'Neon Auth config — it looks like https://<endpoint>.neonauth.<region>.aws.neon.tech/<db>/auth/.well-known/jwks.json'
+  );
+}
+const JWKS = createRemoteJWKSet(new URL(NEON_AUTH_JWKS_URL));
+
+// Comma-separated list of emails allowed to access the Owner Hub, e.g.
+// "a@example.com,b@example.com". Case-insensitive.
+const ADMIN_EMAILS = new Set(
+  (process.env.ADMIN_EMAILS || '')
+    .split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean)
 );
-
-// Token lifetime: 8 hours by default. Override via JWT_EXPIRY env var.
-const JWT_EXPIRY = process.env.JWT_EXPIRY || '8h';
-
-// On first boot with no users, create a default admin account from env vars.
-// OWNER_USER / OWNER_PASS are consumed only once (on first boot) and can be
-// removed from the environment afterward.
-async function bootstrapDefaultUser() {
-  if ((await store.countUsers()) === 0) {
-    const username = process.env.OWNER_USER?.trim() || 'admin';
-    const password = process.env.OWNER_PASS?.trim();
-    if (!password) {
-      if (IS_PRODUCTION) {
-        throw new Error(
-          'No users exist and OWNER_PASS is not set. Set OWNER_PASS to create the initial admin account.'
-        );
-      }
-      // Dev fallback: create a known default and print a warning.
-      const devPass = 'changeme';
-      await store.createUser(username, devPass, 'owner');
-      console.warn(`[AUTH] No users found. Created default dev account: ${username} / ${devPass}`);
-      console.warn('[AUTH] Set OWNER_USER and OWNER_PASS env vars to change this before deploying.');
-    } else {
-      await store.createUser(username, password, 'owner');
-      console.info(`[AUTH] Created initial admin account: ${username}`);
-    }
-  }
+if (ADMIN_EMAILS.size === 0 && IS_PRODUCTION) {
+  console.warn('[AUTH] ADMIN_EMAILS is empty — no one will be able to access the Owner Hub.');
 }
 
-function signToken(userId: string, role: string): string {
-  return jwt.sign({ sub: userId, role }, JWT_SECRET, { expiresIn: JWT_EXPIRY as any });
-}
-
-function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+// Verifies the bearer JWT issued by Neon Auth, resolves it to a real user row
+// via neon_auth.user, and checks that user's email against the allow-list.
+async function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
   const authHeader = req.headers['authorization'];
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (!token) {
     return sendError(res, 401, 'Authorization header with Bearer token required.');
   }
+
+  let userId: string | undefined;
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
-    res.locals.userId = payload.sub;
-    res.locals.userRole = payload.role;
-    next();
+    const { payload } = await jwtVerify(token, JWKS);
+    userId = typeof payload.sub === 'string' ? payload.sub : undefined;
   } catch {
     return sendError(res, 401, 'Invalid or expired token. Please log in again.');
   }
-}
+  if (!userId) {
+    return sendError(res, 401, 'Token did not contain a valid subject.');
+  }
 
-// Keep OWNER_KEY support as a legacy fallback so existing integrations
-// continue to work. Prefer JWT for new sessions.
-const LEGACY_OWNER_KEY = process.env.OWNER_KEY?.trim() || '';
+  const { rows } = await pool.query(
+    'SELECT id, email, name FROM neon_auth."user" WHERE id = $1',
+    [userId]
+  );
+  const user = rows[0];
+  if (!user) {
+    return sendError(res, 401, 'User not found.');
+  }
+
+  const email = String(user.email).toLowerCase();
+  if (!ADMIN_EMAILS.has(email)) {
+    return sendError(res, 403, 'This account is not approved for admin access.');
+  }
+
+  res.locals.user = { id: user.id, email: user.email, name: user.name };
+  next();
+}
 
 // =============================================================================
 // SECURITY MIDDLEWARE
@@ -149,7 +157,6 @@ function createRateLimiter(windowMs: number, max: number) {
 const redirectLimiter  = createRateLimiter(60_000, 60);   // 60 redirects/min/IP
 const uploadLimiter    = createRateLimiter(60_000, 20);   // 20 uploads/min/IP
 const trackLimiter     = createRateLimiter(60_000, 120);  // 120 beacon calls/min/IP
-const loginLimiter     = createRateLimiter(60_000, 5);    // 5 login attempts/min/IP
 const webhookLimiter   = createRateLimiter(60_000, 30);   // 30 webhook calls/min/IP
 
 // =============================================================================
@@ -264,7 +271,7 @@ function validateMagicBytes(buffer: Buffer, declaredExt: string): boolean {
   return false;
 }
 
-app.post('/api/upload', requireAuth, uploadLimiter, (req, res) => {
+app.post('/api/upload', requireAdmin, uploadLimiter, (req, res) => {
   try {
     const { dataUrl, filename } = req.body;
     if (!dataUrl || typeof dataUrl !== 'string') {
@@ -367,50 +374,13 @@ app.get('/api/health', asyncHandler(async (req, res) => {
 }));
 
 // ---- ④ AUTHENTICATION ----
-
-// POST /api/auth/login — exchange username+password for a JWT
-app.post('/api/auth/login', loginLimiter, asyncHandler(async (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password || typeof username !== 'string' || typeof password !== 'string') {
-    return sendError(res, 400, 'username and password are required.');
-  }
-
-  const user = await store.getUserByUsername(username.trim());
-  if (!user || !store.verifyPassword(password, user.passwordHash, user.salt)) {
-    return sendError(res, 401, 'Invalid username or password.');
-  }
-
-  const token = signToken(user.id, user.role);
-  res.json({ token, username: user.username, role: user.role, expiresIn: JWT_EXPIRY });
+// Sign-in itself happens client-side against Neon Auth directly. This route
+// just confirms a token is valid and the user is on the admin allow-list —
+// used by the frontend on load to silently re-validate a stored token, and
+// after a fresh sign-in to confirm access before unlocking the Owner Hub.
+app.get('/api/auth/me', requireAdmin, asyncHandler(async (req, res) => {
+  res.json(res.locals.user);
 }));
-
-// GET /api/auth/me — return the currently authenticated user
-app.get('/api/auth/me', requireAuth, asyncHandler(async (req, res) => {
-  const user = await store.getUserById(res.locals.userId);
-  if (!user) return sendError(res, 404, 'User not found.');
-  res.json({ id: user.id, username: user.username, role: user.role });
-}));
-
-// Legacy passcode verify — kept for backwards compatibility with old clients.
-// New clients should use POST /api/auth/login instead.
-app.post('/api/owner/verify', loginLimiter, (req, res) => {
-  // Accept either JWT (Authorization header) or legacy x-owner-key header.
-  const authHeader = req.headers['authorization'];
-  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (bearerToken) {
-    try {
-      jwt.verify(bearerToken, JWT_SECRET);
-      return res.json({ success: true });
-    } catch {
-      return sendError(res, 401, 'Invalid or expired token.');
-    }
-  }
-  const legacyKey = req.headers['x-owner-key'];
-  if (LEGACY_OWNER_KEY && legacyKey === LEGACY_OWNER_KEY) {
-    return res.json({ success: true, protected: true });
-  }
-  return sendError(res, 401, 'Unauthorized. Provide a valid Bearer token or x-owner-key header.');
-});
 
 // GET all products
 app.get('/api/products', asyncHandler(async (req, res) => {
@@ -453,7 +423,7 @@ app.get('/api/products/:id', asyncHandler(async (req, res) => {
 }));
 
 // POST add product — ② Amazon-only platform validation
-app.post('/api/products', requireAuth, asyncHandler(async (req, res) => {
+app.post('/api/products', requireAdmin, asyncHandler(async (req, res) => {
   const {
     title,
     description,
@@ -509,7 +479,7 @@ const UPDATABLE_PRODUCT_FIELDS = [
 ] as const;
 
 // PUT update product — ② Amazon-only platform validation
-app.put('/api/products/:id', requireAuth, asyncHandler(async (req, res) => {
+app.put('/api/products/:id', requireAdmin, asyncHandler(async (req, res) => {
   const existing = await store.getProduct(req.params.id);
   if (!existing) {
     return sendError(res, 404, 'Product not found');
@@ -554,7 +524,7 @@ app.put('/api/products/:id', requireAuth, asyncHandler(async (req, res) => {
 }));
 
 // DELETE product
-app.delete('/api/products/:id', requireAuth, asyncHandler(async (req, res) => {
+app.delete('/api/products/:id', requireAdmin, asyncHandler(async (req, res) => {
   const deleted = await store.deleteProduct(req.params.id);
   if (!deleted) {
     return sendError(res, 404, 'Product not found');
@@ -649,7 +619,7 @@ app.post('/api/track/click', trackLimiter, asyncHandler(async (req, res) => {
 }));
 
 // MANUAL CONVERSION RECORD (owner-initiated)
-app.post('/api/analytics/conversion', requireAuth, asyncHandler(async (req, res) => {
+app.post('/api/analytics/conversion', requireAdmin, asyncHandler(async (req, res) => {
   const { productId, clickId } = req.body;
   const product = await store.getProduct(productId);
 
@@ -751,7 +721,7 @@ app.get('/api/analytics/public', asyncHandler(async (req, res) => {
 }));
 
 // Full analytics — owner-only.
-app.get('/api/analytics', requireAuth, asyncHandler(async (req, res) => {
+app.get('/api/analytics', requireAdmin, asyncHandler(async (req, res) => {
   const clicks      = await store.listClicks();
   const conversions = await store.listConversions();
   const products    = await store.listProducts();
@@ -846,7 +816,7 @@ app.get('/api/analytics', requireAuth, asyncHandler(async (req, res) => {
 }));
 
 // RESET ANALYTICS
-app.post('/api/analytics/reset', requireAuth, asyncHandler(async (req, res) => {
+app.post('/api/analytics/reset', requireAdmin, asyncHandler(async (req, res) => {
   await store.deleteAllClicks();
   await store.deleteAllConversions();
   res.json({ success: true, message: 'Analytics reset to empty live data' });
@@ -871,8 +841,6 @@ async function startServer() {
   // =============================================================================
   await initDb();
   console.info('[DB] Connected to Postgres and verified schema.');
-
-  await bootstrapDefaultUser();
 
   // Run the retention purge once at startup and then every 24 hours.
   await runRetentionPurge();

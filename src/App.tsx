@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, Flame, ArrowUpDown, ShoppingBag, LayoutDashboard, BarChart3, Plus, Package, LayoutGrid, Grid, ArrowDown } from 'lucide-react';
 import { Product, AnalyticsSummary, ViewMode } from './types';
 import { api, getAuthToken, clearAuthToken } from './services/api';
+import { authClient } from './services/neonAuth';
 import { Navbar } from './components/Navbar';
 import { ProductCard, BentoVariant } from './components/ProductCard';
 import { ProductDetailModal } from './components/ProductDetailModal';
@@ -296,6 +297,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
+                      authClient.signOut().catch(() => {});
                       clearAuthToken();
                       setIsOwnerAuthed(false);
                     }}
