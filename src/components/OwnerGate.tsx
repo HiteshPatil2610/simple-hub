@@ -76,9 +76,12 @@ export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked }) => {
   const handleGoogleSignIn = async () => {
     setError('');
     try {
-      // Redirects to Google; on return, the useEffect above picks the
-      // session back up automatically.
-      await authClient.signIn.social({ provider: 'google', callbackURL: window.location.href });
+      // Explicitly target the #admin hash so that after the full-page round
+      // trip through Google, App.tsx's hash listener restores the Owner Hub
+      // view on reload — otherwise the app resets to the homepage and this
+      // component (and its session-pickup effect above) never remounts.
+      const callbackURL = `${window.location.origin}${window.location.pathname}#admin`;
+      await authClient.signIn.social({ provider: 'google', callbackURL });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Google sign-in failed. Please try again.');
     }
