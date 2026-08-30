@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { X, Lock, ShieldCheck } from 'lucide-react';
+import { X, ShieldCheck } from 'lucide-react';
 import { api } from '../services/api';
+import { PasswordInput } from './PasswordInput';
+import { PasswordStrengthMeter } from './PasswordStrengthMeter';
 
 interface ChangePasswordModalProps {
   onClose: () => void;
@@ -8,7 +10,8 @@ interface ChangePasswordModalProps {
 
 // Lets an already-logged-in admin change their own password. Requires the
 // current password so a stolen-but-still-valid session token alone can't be
-// used to lock the real owner out.
+// used to lock the real owner out. The server independently re-validates
+// strength/reuse rules — the meter here is UX feedback, not enforcement.
 export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ onClose }) => {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -22,10 +25,6 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ onClos
     setError('');
     if (newPassword !== confirmPassword) {
       setError('New passwords do not match.');
-      return;
-    }
-    if (newPassword.length < 8) {
-      setError('New password must be at least 8 characters.');
       return;
     }
     setIsBusy(true);
@@ -66,40 +65,28 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ onClos
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-3">
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#2D3436]/50 pointer-events-none" />
-              <input
-                type="password"
-                autoFocus
-                autoComplete="current-password"
-                value={currentPassword}
-                onChange={e => setCurrentPassword(e.target.value)}
-                placeholder="Current password"
-                className="w-full pl-9 pr-4 py-3 rounded-xl border-2 border-[#2D3436] font-bold text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
-              />
-            </div>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#2D3436]/50 pointer-events-none" />
-              <input
-                type="password"
-                autoComplete="new-password"
+            <PasswordInput
+              value={currentPassword}
+              onChange={setCurrentPassword}
+              placeholder="Current password"
+              autoComplete="current-password"
+              autoFocus
+            />
+            <div className="space-y-1.5">
+              <PasswordInput
                 value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
+                onChange={setNewPassword}
                 placeholder="New password (min 8 characters)"
-                className="w-full pl-9 pr-4 py-3 rounded-xl border-2 border-[#2D3436] font-bold text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
-              />
-            </div>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#2D3436]/50 pointer-events-none" />
-              <input
-                type="password"
                 autoComplete="new-password"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                placeholder="Confirm new password"
-                className="w-full pl-9 pr-4 py-3 rounded-xl border-2 border-[#2D3436] font-bold text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
               />
+              <PasswordStrengthMeter password={newPassword} />
             </div>
+            <PasswordInput
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              placeholder="Confirm new password"
+              autoComplete="new-password"
+            />
             {error && <p className="text-xs font-bold text-[#FF6B6B]">{error}</p>}
             <button
               type="submit"

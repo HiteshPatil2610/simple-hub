@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Lock, ShieldCheck, Mail, KeyRound, ArrowLeft } from 'lucide-react';
 import { api, setAuthToken } from '../services/api';
+import { PasswordInput } from './PasswordInput';
+import { PasswordStrengthMeter } from './PasswordStrengthMeter';
 
 interface OwnerGateProps {
   onUnlocked: () => void;
@@ -64,10 +66,6 @@ export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked }) => {
       setError('Passwords do not match.');
       return;
     }
-    if (newPassword.length < 8) {
-      setError('New password must be at least 8 characters.');
-      return;
-    }
     setIsBusy(true);
     try {
       await api.resetPassword(resetEmail.trim(), otp.trim(), newPassword);
@@ -112,17 +110,12 @@ export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked }) => {
                   className="w-full pl-9 pr-4 py-3 rounded-xl border-2 border-[#2D3436] font-bold text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
                 />
               </div>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#2D3436]/50 pointer-events-none" />
-                <input
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="Password"
-                  className="w-full pl-9 pr-4 py-3 rounded-xl border-2 border-[#2D3436] font-bold text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
-                />
-              </div>
+              <PasswordInput
+                value={password}
+                onChange={setPassword}
+                placeholder="Password"
+                autoComplete="current-password"
+              />
               {error && <p className="text-xs font-bold text-[#FF6B6B]">{error}</p>}
               <button
                 type="submit"
@@ -199,28 +192,21 @@ export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked }) => {
                 placeholder="6-digit code"
                 className="w-full px-4 py-3 rounded-xl border-2 border-[#2D3436] font-bold text-sm text-center tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
               />
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#2D3436]/50 pointer-events-none" />
-                <input
-                  type="password"
-                  autoComplete="new-password"
+              <div className="space-y-1.5">
+                <PasswordInput
                   value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
+                  onChange={setNewPassword}
                   placeholder="New password"
-                  className="w-full pl-9 pr-4 py-3 rounded-xl border-2 border-[#2D3436] font-bold text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
-                />
-              </div>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#2D3436]/50 pointer-events-none" />
-                <input
-                  type="password"
                   autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  placeholder="Confirm new password"
-                  className="w-full pl-9 pr-4 py-3 rounded-xl border-2 border-[#2D3436] font-bold text-sm focus:outline-none focus:ring-2 focus:ring-[#4ECDC4]"
                 />
+                <PasswordStrengthMeter password={newPassword} email={resetEmail} />
               </div>
+              <PasswordInput
+                value={confirmPassword}
+                onChange={setConfirmPassword}
+                placeholder="Confirm new password"
+                autoComplete="new-password"
+              />
               {error && <p className="text-xs font-bold text-[#FF6B6B]">{error}</p>}
               <button
                 type="submit"

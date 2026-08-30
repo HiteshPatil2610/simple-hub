@@ -177,6 +177,52 @@ function sendError(res: express.Response, status: number, error: string) {
 }
 
 // =============================================================================
+// PASSWORD ACCEPTANCE RULES — real enforcement point (the client-side meter
+// is UX feedback only; this is what actually decides what's allowed).
+// =============================================================================
+const COMMON_PASSWORDS = new Set([
+  'password', 'password1', 'password123', '12345678', '123456789', '1234567890',
+  'qwerty123', 'qwertyui', 'letmein1', 'admin123', 'welcome1', 'iloveyou',
+  'monkey123', 'football1', 'starwars1', 'dragon123', 'sunshine1', 'princess1',
+  'abc123456', 'trustno1', 'baseball1', 'superman1', 'whatever1', 'changeme',
+  'letmein', 'password!', 'qazwsx123',
+]);
+
+function hasSequentialRun(password: string, runLength = 4): boolean {
+  const lower = password.toLowerCase();
+  for (let i = 0; i <= lower.length - runLength; i++) {
+    let ascending = true, descending = true, repeated = true;
+    for (let j = 0; j < runLength - 1; j++) {
+      const a = lower.charCodeAt(i + j);
+      const b = lower.charCodeAt(i + j + 1);
+      if (b !== a + 1) ascending = false;
+      if (b !== a - 1) descending = false;
+      if (b !== a) repeated = false;
+    }
+    if (ascending || descending || repeated) return true;
+  }
+  return false;
+}
+
+function overlapsWithEmail(password: string, email: string): boolean {
+  const localPart = email.split('@')[0]?.toLowerCase();
+  if (!localPart || localPart.length < 3) return false;
+  const lowerPassword = password.toLowerCase();
+  return lowerPassword.includes(localPart) || localPart.includes(lowerPassword);
+}
+
+// Checks length/common-password/sequence/email-overlap rules. Does NOT check
+// reuse against the old password — callers do that separately, since it
+// needs the user's existing hash+salt (which this function doesn't have).
+function checkPasswordRules(password: string, email: string): string | null {
+  if (password.length < 8) return 'Password must be at least 8 characters.';
+  if (COMMON_PASSWORDS.has(password.toLowerCase())) return 'That password is too common — please choose another.';
+  if (hasSequentialRun(password)) return 'Avoid simple sequences (1234, abcd) or repeated characters.';
+  if (overlapsWithEmail(password, email)) return "Password can't be based on your email address.";
+  return null;
+}
+
+// =============================================================================
 // LIGHTWEIGHT RATE LIMITING
 // =============================================================================
 function createRateLimiter(windowMs: number, max: number) {
@@ -453,14 +499,17 @@ app.post('/api/auth/change-password', requireAuth, asyncHandler(async (req, res)
   if (!currentPassword || !newPassword || typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
     return sendError(res, 400, 'currentPassword and newPassword are required.');
   }
-  if (newPassword.length < 8) {
-    return sendError(res, 400, 'New password must be at least 8 characters.');
-  }
 
   const user = await store.getUserByIdWithHash(res.locals.userId);
   if (!user) return sendError(res, 404, 'User not found.');
   if (!store.verifyPassword(currentPassword, user.passwordHash, user.salt)) {
     return sendError(res, 401, 'Current password is incorrect.');
+  }
+
+  const ruleViolation = checkPasswordRules(newPassword, user.username);
+  if (ruleViolation) return sendError(res, 400, ruleViolation);
+  if (store.verifyPassword(newPassword, user.passwordHash, user.salt)) {
+    return sendError(res, 400, 'New password must be different from your current password.');
   }
 
   await store.updateUserPassword(user.id, newPassword);
@@ -500,9 +549,6 @@ app.post('/api/auth/reset-password', loginLimiter, asyncHandler(async (req, res)
   if (!email || !otp || !newPassword || typeof email !== 'string' || typeof otp !== 'string' || typeof newPassword !== 'string') {
     return sendError(res, 400, 'email, otp, and newPassword are required.');
   }
-  if (newPassword.length < 8) {
-    return sendError(res, 400, 'New password must be at least 8 characters.');
-  }
 
   const normalizedEmail = email.trim().toLowerCase();
   const result = await store.verifyPasswordResetOTP(normalizedEmail, otp.trim());
@@ -519,6 +565,12 @@ app.post('/api/auth/reset-password', loginLimiter, asyncHandler(async (req, res)
 
   const user = await store.getUserByUsername(normalizedEmail);
   if (!user) return sendError(res, 400, 'Incorrect or expired code.');
+
+  const ruleViolation = checkPasswordRules(newPassword, normalizedEmail);
+  if (ruleViolation) return sendError(res, 400, ruleViolation);
+  if (store.verifyPassword(newPassword, user.passwordHash, user.salt)) {
+    return sendError(res, 400, 'New password must be different from your previous password.');
+  }
 
   await store.updateUserPassword(user.id, newPassword);
   await store.deletePasswordResetOTP(normalizedEmail);
