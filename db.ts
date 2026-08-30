@@ -91,6 +91,15 @@ async function createSchema(): Promise<void> {
       "createdAt"   TEXT NOT NULL
     );
 
+    -- Forgot-password OTPs. One active OTP per email at a time (a new
+    -- request overwrites the old one). Short-lived and single-use.
+    CREATE TABLE IF NOT EXISTS password_resets (
+      email       TEXT PRIMARY KEY,
+      "otpHash"   TEXT NOT NULL,
+      "expiresAt" TEXT NOT NULL,
+      attempts    INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE INDEX IF NOT EXISTS idx_clicks_timestamp      ON clicks(timestamp);
     CREATE INDEX IF NOT EXISTS idx_clicks_productid      ON clicks("productId");
     CREATE INDEX IF NOT EXISTS idx_conversions_productid ON conversions("productId");
@@ -293,6 +302,13 @@ export const store = {
     return rows[0];
   },
 
+  // Like getUserById but includes the password hash/salt — needed to verify
+  // a user's CURRENT password during a self-service password change.
+  async getUserByIdWithHash(id: string): Promise<{ id: string; username: string; passwordHash: string; salt: string; role: string } | undefined> {
+    const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    return rows[0];
+  },
+
   async listUsers(): Promise<{ id: string; username: string; role: string; createdAt: string }[]> {
     const { rows } = await pool.query('SELECT id, username, role, "createdAt" FROM users ORDER BY "createdAt" ASC');
     return rows;
@@ -327,6 +343,63 @@ export const store = {
       [id, username, hash, salt, role, new Date().toISOString()]
     );
     return { id, username, role };
+  },
+
+  // Create a user ONLY if the username doesn't already exist — leaves an
+  // existing account's password untouched. Used to seed admin accounts from
+  // ADMIN_ACCOUNTS on boot: this makes the env var a one-time bootstrap for
+  // NEW accounts, not a value that gets re-applied every redeploy — so a
+  // password someone changes via the app stays changed.
+  async createUserIfMissing(username: string, password: string, role = 'owner'): Promise<boolean> {
+    const existing = await store.getUserByUsername(username);
+    if (existing) return false;
+    await store.createUser(username, password, role);
+    return true;
+  },
+
+  // Update a user's password directly (used by both "change password" while
+  // logged in, and "forgot password" after a valid OTP is verified).
+  async updateUserPassword(id: string, password: string): Promise<void> {
+    const { hash, salt } = store.hashPassword(password);
+    await pool.query('UPDATE users SET "passwordHash" = $1, salt = $2 WHERE id = $3', [hash, salt, id]);
+  },
+
+  // ---- forgot-password OTPs ----
+  // One active OTP per email — a new request replaces any previous one.
+  async setPasswordResetOTP(email: string, otp: string, ttlMinutes = 15): Promise<void> {
+    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60_000).toISOString();
+    await pool.query(
+      `INSERT INTO password_resets (email, "otpHash", "expiresAt", attempts)
+       VALUES ($1, $2, $3, 0)
+       ON CONFLICT (email) DO UPDATE SET "otpHash" = $2, "expiresAt" = $3, attempts = 0`,
+      [email, otpHash, expiresAt]
+    );
+  },
+
+  // Verifies an OTP for an email. Returns 'ok', 'expired', 'invalid', or
+  // 'too_many_attempts' (locked out after 5 wrong guesses — request a new
+  // OTP to try again). Does NOT consume the OTP on failure, so genuine typos
+  // can be retried up to the attempt limit.
+  async verifyPasswordResetOTP(email: string, otp: string): Promise<'ok' | 'expired' | 'invalid' | 'not_found' | 'too_many_attempts'> {
+    const { rows } = await pool.query('SELECT * FROM password_resets WHERE email = $1', [email]);
+    const record = rows[0];
+    if (!record) return 'not_found';
+    if (record.attempts >= 5) return 'too_many_attempts';
+    if (new Date(record.expiresAt).getTime() < Date.now()) return 'expired';
+
+    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+    const matches = otpHash.length === record.otpHash.length &&
+      crypto.timingSafeEqual(Buffer.from(otpHash), Buffer.from(record.otpHash));
+    if (!matches) {
+      await pool.query('UPDATE password_resets SET attempts = attempts + 1 WHERE email = $1', [email]);
+      return 'invalid';
+    }
+    return 'ok';
+  },
+
+  async deletePasswordResetOTP(email: string): Promise<void> {
+    await pool.query('DELETE FROM password_resets WHERE email = $1', [email]);
   },
 
   // Insert a user if the username doesn't exist yet, or update their password

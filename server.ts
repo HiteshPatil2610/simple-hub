@@ -5,6 +5,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import helmet from 'helmet';
 import jwt from 'jsonwebtoken';
+import nodemailer from 'nodemailer';
 import { createServer as createViteServer } from 'vite';
 import { Product, ClickEvent, ConversionEvent, AnalyticsSummary } from './src/types';
 import { store, initDb } from './db';
@@ -46,27 +47,28 @@ const JWT_SECRET = process.env.JWT_SECRET?.trim() || (IS_PRODUCTION
 // Token lifetime: 8 hours by default. Override via JWT_EXPIRY env var.
 const JWT_EXPIRY = process.env.JWT_EXPIRY || '8h';
 
-// Admin accounts are defined entirely via one env var — no self-service
-// sign-up, no external auth service. Format:
+// Admin accounts start out defined via one env var — no external auth
+// service involved. Format:
 //   ADMIN_ACCOUNTS=alice@example.com:somepassword,bob@example.com:anotherpassword
-// On every boot, each listed account is created if it doesn't exist yet, or
-// has its password hash updated to match if it does — so rotating a
-// password is just editing this env var and redeploying. The env var itself
-// only ever holds plaintext transiently in memory at boot; only the salted
-// scrypt hash is ever written to the database.
+// On boot, each listed account is created ONLY IF it doesn't exist yet.
+// Existing accounts are left untouched — once created, a person's password
+// lives in the database and is managed via "change password" / "forgot
+// password" below, not by this env var. To reset someone back to their
+// env-var password, delete their row from the users table and redeploy.
 async function seedAdminAccountsFromEnv() {
   const raw = process.env.ADMIN_ACCOUNTS?.trim();
   if (!raw) {
     if (IS_PRODUCTION && (await store.countUsers()) === 0) {
       throw new Error(
         'No users exist and ADMIN_ACCOUNTS is not set. Set ADMIN_ACCOUNTS ' +
-        'as "email:password,email:password" to create admin accounts.'
+        'as "email:password,email:password" to create the initial admin accounts.'
       );
     }
     return;
   }
 
   const entries = raw.split(',').map(e => e.trim()).filter(Boolean);
+  let createdCount = 0;
   for (const entry of entries) {
     const separatorIndex = entry.indexOf(':');
     if (separatorIndex === -1) {
@@ -79,9 +81,42 @@ async function seedAdminAccountsFromEnv() {
       console.warn(`[AUTH] Skipping malformed ADMIN_ACCOUNTS entry (empty email or password): "${entry}"`);
       continue;
     }
-    await store.upsertUserPassword(email, password, 'owner');
+    const created = await store.createUserIfMissing(email, password, 'owner');
+    if (created) createdCount++;
   }
-  console.info(`[AUTH] Synced ${entries.length} admin account(s) from ADMIN_ACCOUNTS.`);
+  if (createdCount > 0) {
+    console.info(`[AUTH] Created ${createdCount} new admin account(s) from ADMIN_ACCOUNTS.`);
+  }
+}
+
+// =============================================================================
+// EMAIL (forgot-password OTPs only — Gmail SMTP with an App Password, no
+// third-party email service). GMAIL_USER / GMAIL_APP_PASSWORD are required
+// only if someone actually uses "forgot password" — the rest of the app
+// works fine without them.
+// =============================================================================
+const GMAIL_USER = process.env.GMAIL_USER?.trim();
+const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD?.trim();
+const mailer = (GMAIL_USER && GMAIL_APP_PASSWORD)
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
+    })
+  : null;
+
+if (!mailer) {
+  console.warn('[AUTH] GMAIL_USER/GMAIL_APP_PASSWORD not set — "forgot password" emails will not send.');
+}
+
+async function sendOTPEmail(toEmail: string, otp: string) {
+  if (!mailer) throw new Error('Email is not configured on this server.');
+  await mailer.sendMail({
+    from: `Raccoon Hub <${GMAIL_USER}>`,
+    to: toEmail,
+    subject: `Your password reset code: ${otp}`,
+    text: `Your password reset code is ${otp}. It expires in 15 minutes. If you didn't request this, you can ignore this email.`,
+    html: `<p>Your password reset code is:</p><p style="font-size:28px;font-weight:bold;letter-spacing:4px;">${otp}</p><p>It expires in 15 minutes. If you didn't request this, you can ignore this email.</p>`,
+  });
 }
 
 function signToken(userId: string, role: string): string {
@@ -397,6 +432,86 @@ app.post('/api/auth/login', loginLimiter, asyncHandler(async (req, res) => {
 
   const token = signToken(user.id, user.role);
   res.json({ token, username: user.username, role: user.role, expiresIn: JWT_EXPIRY });
+}));
+
+// POST /api/auth/change-password — for a logged-in admin to change their own
+// password. Requires the current password to prevent someone with a stolen,
+// still-valid JWT from locking the real owner out.
+app.post('/api/auth/change-password', requireAuth, asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !newPassword || typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
+    return sendError(res, 400, 'currentPassword and newPassword are required.');
+  }
+  if (newPassword.length < 8) {
+    return sendError(res, 400, 'New password must be at least 8 characters.');
+  }
+
+  const user = await store.getUserByIdWithHash(res.locals.userId);
+  if (!user) return sendError(res, 404, 'User not found.');
+  if (!store.verifyPassword(currentPassword, user.passwordHash, user.salt)) {
+    return sendError(res, 401, 'Current password is incorrect.');
+  }
+
+  await store.updateUserPassword(user.id, newPassword);
+  res.json({ success: true, message: 'Password changed.' });
+}));
+
+// POST /api/auth/forgot-password — emails a one-time 6-digit code (15 min
+// expiry) if the email belongs to an admin account. Always responds success
+// either way, so this can't be used to find out which emails have accounts.
+app.post('/api/auth/forgot-password', loginLimiter, asyncHandler(async (req, res) => {
+  const { email } = req.body || {};
+  if (!email || typeof email !== 'string') {
+    return sendError(res, 400, 'Email is required.');
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+  const user = await store.getUserByUsername(normalizedEmail);
+
+  if (user) {
+    const otp = crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
+    await store.setPasswordResetOTP(normalizedEmail, otp, 15);
+    try {
+      await sendOTPEmail(normalizedEmail, otp);
+    } catch (err) {
+      console.error('[AUTH] Failed to send password reset email:', err);
+      // Don't reveal the send failure to the client — same generic response.
+    }
+  }
+
+  res.json({ success: true, message: 'If that email has an account, a reset code has been sent.' });
+}));
+
+// POST /api/auth/reset-password — completes a forgot-password flow: email +
+// the 6-digit code + a new password. Single-use; locks after 5 wrong guesses
+// (request a fresh code to try again).
+app.post('/api/auth/reset-password', loginLimiter, asyncHandler(async (req, res) => {
+  const { email, otp, newPassword } = req.body || {};
+  if (!email || !otp || !newPassword || typeof email !== 'string' || typeof otp !== 'string' || typeof newPassword !== 'string') {
+    return sendError(res, 400, 'email, otp, and newPassword are required.');
+  }
+  if (newPassword.length < 8) {
+    return sendError(res, 400, 'New password must be at least 8 characters.');
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const result = await store.verifyPasswordResetOTP(normalizedEmail, otp.trim());
+
+  if (result === 'too_many_attempts') {
+    return sendError(res, 429, 'Too many incorrect attempts. Request a new code.');
+  }
+  if (result === 'expired') {
+    return sendError(res, 400, 'That code has expired. Request a new one.');
+  }
+  if (result === 'invalid' || result === 'not_found') {
+    return sendError(res, 400, 'Incorrect or expired code.');
+  }
+
+  const user = await store.getUserByUsername(normalizedEmail);
+  if (!user) return sendError(res, 400, 'Incorrect or expired code.');
+
+  await store.updateUserPassword(user.id, newPassword);
+  await store.deletePasswordResetOTP(normalizedEmail);
+  res.json({ success: true, message: 'Password reset. You can now log in.' });
 }));
 
 // GET /api/auth/me — return the currently authenticated user

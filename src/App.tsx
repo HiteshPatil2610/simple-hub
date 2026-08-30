@@ -10,6 +10,7 @@ import { ProductAdminModal } from './components/ProductAdminModal';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { OwnerProductManager } from './components/OwnerProductManager';
 import { OwnerGate } from './components/OwnerGate';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { RedirectNotification } from './components/RedirectNotification';
 import { Footer } from './components/Footer';
 
@@ -65,6 +66,7 @@ export default function App() {
 
   // Owner Hub access gate
   const [isOwnerAuthed, setIsOwnerAuthed] = useState(false);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isCheckingOwnerAuth, setIsCheckingOwnerAuth] = useState(true);
 
   // Initial load & URL Hash listener
@@ -292,6 +294,16 @@ export default function App() {
 
                 {/* Owner Sub Tabs Switcher */}
                 <div className="flex items-center gap-2 self-start sm:self-auto">
+                {isOwnerAuthed && (
+                  <button
+                    type="button"
+                    onClick={() => setIsChangePasswordOpen(true)}
+                    className="text-[10px] font-black uppercase tracking-wider text-[#2D3436]/60 hover:text-[#2D3436] underline"
+                    title="Change your password"
+                  >
+                    Change Password
+                  </button>
+                )}
                 {isOwnerAuthed && (
                   <button
                     type="button"
@@ -745,6 +757,11 @@ export default function App() {
         product={redirectToastProduct}
         onClose={() => setRedirectToastProduct(null)}
       />
+
+      {/* Change Password Modal */}
+      {isChangePasswordOpen && (
+        <ChangePasswordModal onClose={() => setIsChangePasswordOpen(false)} />
+      )}
     </div>
   );
 }

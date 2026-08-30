@@ -46,6 +46,46 @@ export const api = {
     return data;
   },
 
+  // Change password while logged in — requires the current password.
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    const res = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Could not change password.');
+    }
+  },
+
+  // Request a password-reset code by email (sent via server email if the
+  // account exists — always resolves successfully either way).
+  async forgotPassword(email: string): Promise<void> {
+    const res = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Could not request a reset code.');
+    }
+  },
+
+  // Complete a password reset with the emailed code.
+  async resetPassword(email: string, otp: string, newPassword: string): Promise<void> {
+    const res = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, otp, newPassword }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Could not reset password.');
+    }
+  },
+
   // Legacy passcode verify — kept for compatibility. New code should use login().
   async verifyOwnerKey(key: string): Promise<boolean> {
     const res = await fetch('/api/owner/verify', {
