@@ -91,6 +91,12 @@ async function createSchema(): Promise<void> {
       "createdAt"   TEXT NOT NULL
     );
 
+    -- Login lockout tracking. Added via ALTER below so it also applies to a
+    -- users table that already existed before this feature (CREATE TABLE IF
+    -- NOT EXISTS is a no-op on an existing table — it won't add columns).
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS "failedLoginAttempts" INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS "lockedUntil" TEXT;
+
     -- Forgot-password OTPs. One active OTP per email at a time (a new
     -- request overwrites the old one). Short-lived and single-use.
     CREATE TABLE IF NOT EXISTS password_resets (
@@ -418,6 +424,36 @@ export const store = {
         [id, username, hash, salt, role, new Date().toISOString()]
       );
     }
+  },
+
+  // ---- login lockout ----
+  // After 3 failed attempts, lock the account for LOGIN_LOCKOUT_MINUTES.
+  // Tracked per-account (not per-IP) — this is what actually stops someone
+  // from grinding through password guesses for one specific admin.
+  async recordFailedLogin(username: string, lockoutMinutes: number): Promise<void> {
+    const { rows } = await pool.query(
+      'UPDATE users SET "failedLoginAttempts" = "failedLoginAttempts" + 1 WHERE username = $1 RETURNING "failedLoginAttempts"',
+      [username]
+    );
+    const attempts = rows[0]?.failedLoginAttempts;
+    if (attempts >= 3) {
+      const lockedUntil = new Date(Date.now() + lockoutMinutes * 60_000).toISOString();
+      await pool.query('UPDATE users SET "lockedUntil" = $1 WHERE username = $2', [lockedUntil, username]);
+    }
+  },
+
+  async clearFailedLogins(username: string): Promise<void> {
+    await pool.query('UPDATE users SET "failedLoginAttempts" = 0, "lockedUntil" = NULL WHERE username = $1', [username]);
+  },
+
+  // Returns remaining lockout seconds if still locked, or null if not
+  // locked (including if a past lock has already expired).
+  async getLockoutRemainingSeconds(username: string): Promise<number | null> {
+    const { rows } = await pool.query('SELECT "lockedUntil" FROM users WHERE username = $1', [username]);
+    const lockedUntil = rows[0]?.lockedUntil;
+    if (!lockedUntil) return null;
+    const remainingMs = new Date(lockedUntil).getTime() - Date.now();
+    return remainingMs > 0 ? Math.ceil(remainingMs / 1000) : null;
   },
 };
 

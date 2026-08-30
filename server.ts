@@ -419,17 +419,28 @@ app.get('/api/health', asyncHandler(async (req, res) => {
 // POST /api/auth/login — exchange email+password for a JWT. Accounts are
 // defined via the ADMIN_ACCOUNTS env var (see seedAdminAccountsFromEnv) —
 // there's no self-service sign-up.
+const LOGIN_LOCKOUT_MINUTES = Math.max(1, parseInt(process.env.LOGIN_LOCKOUT_MINUTES || '60', 10));
+
 app.post('/api/auth/login', loginLimiter, asyncHandler(async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password || typeof username !== 'string' || typeof password !== 'string') {
     return sendError(res, 400, 'Email and password are required.');
   }
+  const normalizedEmail = username.trim().toLowerCase();
 
-  const user = await store.getUserByUsername(username.trim().toLowerCase());
+  const lockoutRemaining = await store.getLockoutRemainingSeconds(normalizedEmail);
+  if (lockoutRemaining !== null) {
+    const minutes = Math.ceil(lockoutRemaining / 60);
+    return sendError(res, 429, `Too many failed attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`);
+  }
+
+  const user = await store.getUserByUsername(normalizedEmail);
   if (!user || !store.verifyPassword(password, user.passwordHash, user.salt)) {
+    if (user) await store.recordFailedLogin(normalizedEmail, LOGIN_LOCKOUT_MINUTES);
     return sendError(res, 401, 'Invalid email or password.');
   }
 
+  await store.clearFailedLogins(normalizedEmail);
   const token = signToken(user.id, user.role);
   res.json({ token, username: user.username, role: user.role, expiresIn: JWT_EXPIRY });
 }));
