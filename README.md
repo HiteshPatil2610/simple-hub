@@ -15,13 +15,14 @@ Raccoon Hub lets content creators, curators, and niche site owners share hand-pi
 ## ✨ Features
 
 - **Neo-Brutalist design system** — bold typography, curated HSL color tokens, solid `#111111` borders, frosted glass header backdrop, and yellow interactive hover states.
-- **Circular View Transitions theme toggle** — hardware-accelerated circular reveal (Light → Dark) and shrinking collapse (Dark → Light) using the native Browser View Transitions API (`@keyframes theme-circle-expand` / `theme-circle-shrink`).
+- **Circular View Transitions theme toggle** — hardware-accelerated circular reveal (Light → Dark) and shrinking collapse (Dark → Light) using the native Browser View Transitions API (`@keyframes theme-circle-expand` / `theme-circle-shrink`), with state persisted in `localStorage` (`raccoon_hub_theme`).
+- **Dynamic Bento & Classic layout toggle** — switch between a dynamic Bento Grid featuring `hero`, `wide`, `tall`, and `standard` card variants, and a traditional uniform grid layout.
 - **Curated storefront** — a responsive card grid with real-time search and category filters. Products are entered by the owner and displayed with image, title, description, category, and a "View on Amazon" button.
 - **Amazon-only affiliate links** — paste any `amazon.com/dp/...` link or `amzn.to/...` short link; affiliate tags and UTM parameters are applied automatically. Only Amazon platform is supported.
-- **Server-side redirect & telemetry** — every outbound click routes through a tracking endpoint that logs timestamp, device type, referrer, and UTM data *before* forwarding the visitor, with no client-side delay.
-- **Owner Control Hub** — an email + password–gated admin panel to add/edit/delete products, upload images straight from your device, and review analytics.
+- **Server-side redirect & telemetry** — every outbound click routes through a tracking endpoint that logs timestamp, device type, referrer, and UTM data *before* forwarding the visitor with an interactive redirect notification toast.
+- **Owner Control Hub** — an email + password–gated admin panel to add/edit/delete products, upload images straight from your device, change admin password (`ChangePasswordModal`), and review analytics.
 - **Live analytics** — total clicks, real (hashed, anonymous) unique visitors, a 14-day trend graph, a product leaderboard, a searchable click stream, and CSV export. New deployments start empty and populate only from real activity.
-- **Multi-admin auth, no external service** — admin accounts (email + password) are defined via one `ADMIN_ACCOUNTS` env var; passwords are hashed with `crypto.scrypt` before storage; sessions are short-lived JWTs (default 8 h). No third-party auth provider, no OAuth, no self-service sign-up.
+- **Multi-admin auth, no external service** — admin accounts (email + password) are defined via one `ADMIN_ACCOUNTS` env var; passwords are hashed with `crypto.scrypt` before storage; sessions are short-lived JWTs (default 8 h). Includes an in-app password update dialog (`/api/auth/change-password`).
 - **Conversion webhooks** — `POST /api/webhooks/conversion` accepts HMAC-signed payloads from affiliate networks (Impact, CJ, ShareASale).
 - **Automatic data retention** — click records older than `CLICK_RETENTION_DAYS` (default 90 days) are purged on startup and daily.
 - **Secured by default** — every mutating admin route requires a valid JWT, uploads are type/size/magic-bytes validated, and click endpoints are rate-limited.

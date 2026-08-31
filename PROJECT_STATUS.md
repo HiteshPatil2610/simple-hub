@@ -48,6 +48,9 @@ The project is scoped exclusively to **Amazon Associates**. It does not use pric
   - **Light → Dark Mode**: Expanding Dark Mode circle originating from the click coordinates of the mode toggle button.
   - **Dark → Light Mode**: Shrinking Dark Mode circle collapsing back into the mode toggle button coordinates.
   - Implemented via compositor-thread CSS keyframes (`@keyframes theme-circle-expand` & `@keyframes theme-circle-shrink`) for jitter-free 60 FPS performance and zero 1-frame black screen flashes.
+- **Dynamic Bento & Classic Layout Toggle**: Allows visitors to toggle between a dynamic Bento grid (`hero`, `wide`, `tall`, `standard` bento variants) and a uniform grid view.
+- **In-App Admin Password Change Modal**: `ChangePasswordModal.tsx` enables authenticated owners to change their account password via `POST /api/auth/change-password`.
+- **Redirect Toast Notification Component**: `RedirectNotification.tsx` provides interactive feedback banners on outbound click actions.
 - **Interactive Category Filters**: Category pills feature dynamic hover effects (yellow background + black text).
 
 ### Security and secrets

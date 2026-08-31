@@ -18,7 +18,8 @@ The design is a retro-modern neo-brutalist aesthetic — bold typography, playfu
   - **Light → Dark Mode**: Expanding Dark Mode circle originating from toggle button coordinates.
   - **Dark → Light Mode**: Shrinking Dark Mode circle collapsing back into toggle button coordinates.
   - Powered by native browser `@keyframes theme-circle-expand` and `@keyframes theme-circle-shrink` for 60 FPS performance and zero 1-frame flashes.
-- Real-time search, category filtering (with interactive yellow hover states), and quick-preview modal.
+- **Dynamic Layout Mode Toggle**: Switch between **Bento Grid** (`hero`, `wide`, `tall`, `standard` bento variants) and **Classic Grid**.
+- Real-time search, category filtering (with interactive yellow hover states), quick-preview modal (`ProductDetailModal`), and redirect toast notification (`RedirectNotification`).
 
 ### Direct Amazon Affiliate Link Engine
 - Accepts any valid Amazon link: standard `amazon.com/dp/...` affiliate URLs or shortened `amzn.to/...` links.
@@ -28,11 +29,12 @@ The design is a retro-modern neo-brutalist aesthetic — bold typography, playfu
 ### Server-Side Redirect & Telemetry
 - Outbound clicks route through `/api/redirect/:id` (or the short alias `/r/:id`).
 - Each click records: timestamp, device type (Mobile/Desktop/Tablet, parsed from the User-Agent), referrer, UTM parameters, and an anonymous per-day visitor fingerprint (see [Analytics](#4-analytics)).
-- After logging, the visitor is forwarded with a standard HTTP 302 redirect — no client-side delay.
+- After logging, the visitor is forwarded with a standard HTTP 302 redirect — accompanied by an interactive redirect toast notification banner.
 
 ### Owner Control Hub (`/#admin`)
 Gated behind email + password login (see [Authentication](#3-authentication--security)). Once unlocked:
 - **Manage Products** — add, edit, delete listings; upload product photos directly from device storage; switch between list and grid views; one-click "Test Link" and "Copy Link".
+- **Account Management** — update owner account password directly via `ChangePasswordModal` (`POST /api/auth/change-password`).
 - **Records & Clicks** — real-time totals for clicks and unique visitors, a 14-day trend graph, a product performance leaderboard, a searchable click stream, and CSV export.
 
 ---
