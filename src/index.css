@@ -131,22 +131,20 @@
   }
 }
 
-/* View Transitions API circular theme toggle */
+/* View Transitions API circular theme toggle with 60-120 FPS GPU hardware acceleration */
 ::view-transition-group(root),
 ::view-transition-image-pair(root) {
   isolation: isolate;
-}
-
-/* View Transitions API circular theme toggle */
-::view-transition-group(root),
-::view-transition-image-pair(root) {
-  isolation: isolate;
+  will-change: transform;
 }
 
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none !important;
   mix-blend-mode: normal !important;
+  will-change: clip-path;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 html.theme-transitioning *,
@@ -159,6 +157,7 @@ html.theme-transitioning *::after {
   0% {
     clip-path: circle(0px at var(--x, 50%) var(--y, 50%));
   }
+
   100% {
     clip-path: circle(150vmax at var(--x, 50%) var(--y, 50%));
   }
@@ -168,26 +167,29 @@ html.theme-transitioning *::after {
   0% {
     clip-path: circle(150vmax at var(--x, 50%) var(--y, 50%));
   }
+
   100% {
     clip-path: circle(0px at var(--x, 50%) var(--y, 50%));
   }
 }
 
-/* Light -> Dark: new(root) (Dark mode) is on top and expands */
+/* Light -> Dark: new(root) (Dark mode) is on top and expands on GPU */
 html.theme-going-dark::view-transition-new(root) {
   z-index: 9999;
-  animation: theme-circle-expand 450ms cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+  animation: theme-circle-expand 750ms cubic-bezier(0.42, 0, 1, 1) forwards !important;
 }
+
 html.theme-going-dark::view-transition-old(root) {
   z-index: 1;
   animation: none !important;
 }
 
-/* Dark -> Light: old(root) (Dark mode) is on top and shrinks */
+/* Dark -> Light: old(root) (Dark mode) is on top and shrinks on GPU */
 html.theme-going-light::view-transition-old(root) {
   z-index: 9999;
-  animation: theme-circle-shrink 450ms cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+  animation: theme-circle-shrink 750ms cubic-bezier(0.42, 0, 1, 1) forwards !important;
 }
+
 html.theme-going-light::view-transition-new(root) {
   z-index: 1;
   animation: none !important;

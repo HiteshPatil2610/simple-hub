@@ -49,7 +49,7 @@ export default function App() {
   const getBentoVariantForIndex = (product: Product, index: number): BentoVariant => {
     if (layoutMode === 'classic') return 'standard';
     if (product.featured) return 'hero';
-    
+
     const bentoPattern: BentoVariant[] = [
       'hero',
       'standard',
@@ -173,7 +173,7 @@ export default function App() {
           clearAuthToken();
         }
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setIsCheckingOwnerAuth(false));
   }, []);
 
@@ -322,37 +322,57 @@ export default function App() {
       />
 
       {/* Main View Router */}
-      <main className="flex-1 pb-16">
+      <main className={`flex-1 ${isOwnerView && !isOwnerAuthed ? 'pb-0 flex flex-col' : 'pb-16'}`}>
         <AnimatePresence mode="wait">
           {isOwnerView ? (
-            /* ================= PAGE 2: OWNER VIEW (RECORDS & PRODUCTS) ================= */
-            <motion.div
-              key="owner-view"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
-              transition={{ duration: 0.25 }}
-              className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6"
-            >
-              {/* Owner Header Bar */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-[var(--border)]/20 pb-5">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full bg-[#FFE600] border-2 border-[#111111] shadow-[2px_2px_0px_0px_var(--border)] text-[10px] font-black uppercase text-[#111111]">
-                      Owner Control Hub
-                    </span>
-                    <span className="text-xs font-mono font-bold text-[var(--muted-text)]">
-                      Live Catalog & Telemetry
-                    </span>
+            isCheckingOwnerAuth ? (
+              <div className="py-16 text-center text-sm font-bold text-[var(--muted-text)]">Checking access…</div>
+            ) : !isOwnerAuthed ? (
+              /* ================= LOGIN PAGE: FULL SCREEN SPLIT (YELLOW 50% / ORANGE 50%) ================= */
+              <motion.div
+                key="owner-gate-view"
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
+                className="w-full flex-1 flex flex-col"
+              >
+                <OwnerGate
+                  onUnlocked={() => {
+                    setIsOwnerAuthed(true);
+                    refreshAnalytics();
+                  }}
+                  onBackToStorefront={() => changeView('shop')}
+                />
+              </motion.div>
+            ) : (
+              /* ================= PAGE 2: AUTHENTICATED OWNER HUB (RECORDS & PRODUCTS) ================= */
+              <motion.div
+                key="owner-view"
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
+                className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6"
+              >
+                {/* Owner Header Bar */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-[var(--border)]/20 pb-5">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full bg-[#FFE600] border-2 border-[#111111] shadow-[2px_2px_0px_0px_var(--border)] text-[10px] font-black uppercase text-[#111111]">
+                        Owner Control Hub
+                      </span>
+                      <span className="text-xs font-mono font-bold text-[var(--muted-text)]">
+                        Live Catalog & Telemetry
+                      </span>
+                    </div>
+                    <h1 className="text-2xl sm:text-3xl font-display font-extrabold text-[var(--foreground)] mt-1">
+                      Curator’s Desk & Records
+                    </h1>
                   </div>
-                  <h1 className="text-2xl sm:text-3xl font-display font-extrabold text-[var(--foreground)] mt-1">
-                    Curator’s Desk & Records
-                  </h1>
-                </div>
 
-                {/* Owner Sub Tabs & Actions */}
-                <div className="flex items-center gap-3 self-start sm:self-auto">
-                  {isOwnerAuthed && (
+                  {/* Owner Sub Tabs & Actions */}
+                  <div className="flex items-center gap-3 self-start sm:self-auto">
                     <button
                       type="button"
                       id="change-password-button"
@@ -362,8 +382,6 @@ export default function App() {
                     >
                       Change Password
                     </button>
-                  )}
-                  {isOwnerAuthed && (
                     <button
                       type="button"
                       id="logout-button"
@@ -376,78 +394,65 @@ export default function App() {
                     >
                       Lock / Logout
                     </button>
-                  )}
-                  <div className="inline-flex p-1 bg-[var(--card)] border-2 border-[var(--border)] rounded-xl shadow-[3px_3px_0px_0px_var(--border)]">
-                    <button
-                      type="button"
-                      id="manage-products-tab"
-                      data-testid="manage-products-tab"
-                      onClick={() => setOwnerSubTab('products')}
-                      className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition ${
-                        ownerSubTab === 'products'
-                          ? 'bg-[#FFE600] text-[#111111] border border-[#111111] shadow-[2px_2px_0px_0px_var(--border)]'
-                          : 'text-[var(--foreground)]/70 hover:text-[var(--foreground)]'
-                      }`}
-                    >
-                      <Package className="w-4 h-4" />
-                      <span>Manage Products</span>
-                    </button>
+                    <div className="inline-flex p-1 bg-[var(--card)] border-2 border-[var(--border)] rounded-xl shadow-[3px_3px_0px_0px_var(--border)]">
+                      <button
+                        type="button"
+                        id="manage-products-tab"
+                        data-testid="manage-products-tab"
+                        onClick={() => setOwnerSubTab('products')}
+                        className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition ${ownerSubTab === 'products'
+                            ? 'bg-[#FFE600] text-[#111111] border border-[#111111] shadow-[2px_2px_0px_0px_var(--border)]'
+                            : 'text-[var(--foreground)]/70 hover:text-[var(--foreground)]'
+                          }`}
+                      >
+                        <Package className="w-4 h-4" />
+                        <span>Manage Products</span>
+                      </button>
 
-                    <button
-                      type="button"
-                      id="analytics-tab"
-                      data-testid="analytics-tab"
-                      onClick={() => setOwnerSubTab('analytics')}
-                      className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition ${
-                        ownerSubTab === 'analytics'
-                          ? 'bg-[#4ECDC4] text-[#111111] border border-[#111111] shadow-[2px_2px_0px_0px_#111111]'
-                          : 'text-[var(--foreground)]/70 hover:text-[var(--foreground)]'
-                      }`}
-                    >
-                      <BarChart3 className="w-4 h-4" />
-                      <span>Records & Clicks</span>
-                    </button>
+                      <button
+                        type="button"
+                        id="analytics-tab"
+                        data-testid="analytics-tab"
+                        onClick={() => setOwnerSubTab('analytics')}
+                        className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition ${ownerSubTab === 'analytics'
+                            ? 'bg-[#4ECDC4] text-[#111111] border border-[#111111] shadow-[2px_2px_0px_0px_#111111]'
+                            : 'text-[var(--foreground)]/70 hover:text-[var(--foreground)]'
+                          }`}
+                      >
+                        <BarChart3 className="w-4 h-4" />
+                        <span>Records & Clicks</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Sub-view switcher: gated behind owner authentication */}
-              {isCheckingOwnerAuth ? (
-                <div className="py-16 text-center text-sm font-bold text-[var(--muted-text)]">Checking access…</div>
-              ) : !isOwnerAuthed ? (
-                <OwnerGate
-                  onUnlocked={() => {
-                    setIsOwnerAuthed(true);
-                    refreshAnalytics();
-                  }}
-                  onBackToStorefront={() => changeView('shop')}
-                />
-              ) : ownerSubTab === 'products' ? (
-                <OwnerProductManager
-                  products={products}
-                  onAddProduct={() => {
-                    setEditingProduct(null);
-                    setIsAddModalOpen(true);
-                  }}
-                  onEditProduct={product => {
-                    setEditingProduct(product);
-                    setIsAddModalOpen(true);
-                  }}
-                  onDeleteProduct={handleDeleteProduct}
-                  onRefresh={loadStoreData}
-                />
-              ) : (
-                <AnalyticsDashboard
-                  analytics={analytics}
-                  products={products}
-                  isLoading={isLoading || isRefreshing}
-                  onRefresh={refreshAnalytics}
-                  onSelectProduct={p => {
-                    setQuickViewProduct(p);
-                  }}
-                />
-              )}
-            </motion.div>
+                {ownerSubTab === 'products' ? (
+                  <OwnerProductManager
+                    products={products}
+                    onAddProduct={() => {
+                      setEditingProduct(null);
+                      setIsAddModalOpen(true);
+                    }}
+                    onEditProduct={product => {
+                      setEditingProduct(product);
+                      setIsAddModalOpen(true);
+                    }}
+                    onDeleteProduct={handleDeleteProduct}
+                    onRefresh={loadStoreData}
+                  />
+                ) : (
+                  <AnalyticsDashboard
+                    analytics={analytics}
+                    products={products}
+                    isLoading={isLoading || isRefreshing}
+                    onRefresh={refreshAnalytics}
+                    onSelectProduct={p => {
+                      setQuickViewProduct(p);
+                    }}
+                  />
+                )}
+              </motion.div>
+            )
           ) : (
             /* ================= PAGE 1: PUBLIC STOREFRONT (EXPRESSIVE HERO MATCHING SCREENSHOT 3 & 4) ================= */
             <motion.div
@@ -571,25 +576,36 @@ export default function App() {
                     data-testid="category-filters"
                     className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1"
                   >
-                    {CATEGORIES.map(category => (
-                      <button
-                        key={category}
-                        id={`category-btn-${category.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
-                        data-testid={
-                          category === 'All'
-                            ? 'category-filter-all-finds'
-                            : `category-filter-${category.toLowerCase().replace(/[^a-z0-9]/g, '-')}`
-                        }
-                        onClick={() => setSelectedCategory(category)}
-                        className={`min-h-[38px] px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider whitespace-nowrap transition border-2 border-[#111111] active:translate-y-0.5 ${
-                          selectedCategory === category
-                            ? 'bg-[#4ECDC4] text-[#111111] shadow-[2px_2px_0px_0px_var(--border)]'
-                            : 'bg-[var(--card)] text-[var(--foreground)] hover:bg-[#FFE600] hover:text-[#111111] shadow-[2px_2px_0px_0px_var(--border)]'
-                        }`}
-                      >
-                        {category === 'All' ? 'All finds' : category}
-                      </button>
-                    ))}
+                    {CATEGORIES.map(category => {
+                      const isSelected = selectedCategory === category;
+                      return (
+                        <motion.button
+                          key={category}
+                          whileHover={{ scale: 1.03, y: -2 }}
+                          whileTap={{ scale: 0.96 }}
+                          id={`category-btn-${category.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
+                          data-testid={
+                            category === 'All'
+                              ? 'category-filter-all-finds'
+                              : `category-filter-${category.toLowerCase().replace(/[^a-z0-9]/g, '-')}`
+                          }
+                          onClick={() => setSelectedCategory(category)}
+                          className={`relative min-h-[38px] px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider whitespace-nowrap transition border-2 border-[#111111] shadow-[2px_2px_0px_0px_var(--border)] ${isSelected
+                              ? 'bg-[#4ECDC4] text-[#111111]'
+                              : 'bg-[var(--card)] text-[var(--foreground)] hover:bg-[#FFE600] hover:text-[#111111]'
+                            }`}
+                        >
+                          {isSelected && (
+                            <motion.span
+                              layoutId="activeCategoryIndicator"
+                              className="absolute inset-0 bg-[#4ECDC4] rounded-full border-2 border-[#111111] -z-10 shadow-[2px_2px_0px_0px_var(--border)]"
+                              transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                            />
+                          )}
+                          <span>{category === 'All' ? 'All finds' : category}</span>
+                        </motion.button>
+                      );
+                    })}
                   </div>
 
                   {/* Sort select & clear */}
@@ -610,7 +626,9 @@ export default function App() {
                     </div>
 
                     {(selectedCategory !== 'All' || searchTerm) && (
-                      <button
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
                         id="clear-filters-button"
                         data-testid="clear-filters-button"
                         onClick={() => {
@@ -620,12 +638,12 @@ export default function App() {
                         className="text-[#FF6B6B] hover:underline font-black text-xs uppercase"
                       >
                         Clear filters
-                      </button>
+                      </motion.button>
                     )}
                   </div>
                 </div>
 
-                {/* Product Grid */}
+                {/* Product Grid with Morph Layout Transition */}
                 <div className="py-4">
                   {isLoading ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
@@ -639,19 +657,25 @@ export default function App() {
                       ))}
                     </div>
                   ) : filteredProducts.length === 0 ? (
-                    <div
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
                       id="empty-state"
                       data-testid="empty-state"
-                      className="text-center py-16 bg-[var(--card)] rounded-2xl border-2 border-[var(--border)] shadow-[4px_4px_0px_0px_var(--border)] max-w-lg mx-auto p-8"
+                      className="py-16 px-4 text-center bg-[var(--card)] border-3 border-[var(--border)] rounded-[2rem] shadow-[6px_6px_0px_0px_var(--border)] max-w-md mx-auto my-8"
                     >
-                      <div className="w-12 h-12 rounded-xl bg-[#FFE600] border-2 border-[#111111] text-[#111111] flex items-center justify-center mx-auto mb-3 shadow-[2px_2px_0px_0px_#111111] text-2xl">
-                        🦝
+                      <div className="w-16 h-16 bg-[#FFE600] rounded-2xl border-2 border-[#111111] shadow-[3px_3px_0px_0px_var(--border)] flex items-center justify-center text-3xl mx-auto mb-4 -rotate-6">
+                        🔍
                       </div>
-                      <h3 className="text-lg font-display font-extrabold text-[var(--foreground)]">No matching finds</h3>
-                      <p className="text-xs text-[var(--muted-text)] mt-1 font-bold">
-                        Try adjusting your search or category filters to discover products.
+                      <h3 className="font-display text-2xl font-extrabold text-[var(--foreground)] mb-2">
+                        No finds match your search
+                      </h3>
+                      <p className="text-xs font-semibold text-[var(--muted-text)] max-w-xs mx-auto">
+                        Try adjusting your keywords or clearing the category filter to explore the full stash.
                       </p>
-                      <button
+                      <motion.button
+                        whileHover={{ scale: 1.04 }}
+                        whileTap={{ scale: 0.96 }}
                         id="empty-clear-button"
                         data-testid="empty-clear-button"
                         onClick={() => {
@@ -661,25 +685,28 @@ export default function App() {
                         className="mt-5 px-5 py-2.5 bg-[#FF5722] text-white border-2 border-[#111111] rounded-xl text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_0px_#111111] hover:translate-y-0.5"
                       >
                         Clear Filters
-                      </button>
-                    </div>
+                      </motion.button>
+                    </motion.div>
                   ) : (
-                    <div
+                    <motion.div
+                      layout
                       id="product-grid"
                       data-testid="product-grid"
                       className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
                     >
-                      {filteredProducts.map((product, idx) => (
-                        <ProductCard
-                          key={product.id}
-                          product={product}
-                          index={idx}
-                          bentoVariant={getBentoVariantForIndex(product, idx)}
-                          onQuickView={p => setQuickViewProduct(p)}
-                          onAffiliateClick={handleAffiliateClick}
-                        />
-                      ))}
-                    </div>
+                      <AnimatePresence mode="popLayout">
+                        {filteredProducts.map((product, idx) => (
+                          <ProductCard
+                            key={product.id}
+                            product={product}
+                            index={idx}
+                            bentoVariant={getBentoVariantForIndex(product, idx)}
+                            onQuickView={p => setQuickViewProduct(p)}
+                            onAffiliateClick={handleAffiliateClick}
+                          />
+                        ))}
+                      </AnimatePresence>
+                    </motion.div>
                   )}
                 </div>
               </div>

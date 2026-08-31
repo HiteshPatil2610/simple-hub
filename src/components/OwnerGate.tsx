@@ -83,7 +83,7 @@ export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked, onBackToStoref
   };
 
   return (
-    <div className="min-h-[85vh] -mx-4 -my-8 sm:-mx-6 sm:-my-8 lg:-mx-8 grid grid-cols-1 lg:grid-cols-2 border-b-3 border-[#111111]">
+    <div className="w-full flex-1 min-h-[calc(100vh-4rem)] grid grid-cols-1 lg:grid-cols-2 border-b-3 border-[#111111]">
       {/* Left side: Yellow canvas with white Neo-Brutalist card */}
       <div className="bg-[#FFE600] p-6 sm:p-12 lg:p-16 flex items-center justify-center border-b-3 lg:border-b-0 lg:border-r-3 border-[#111111]">
         <div className="w-full max-w-md bg-white border-3 border-[#111111] rounded-[1.75rem] p-6 sm:p-8 shadow-[6px_6px_0px_0px_#111111] text-left">
@@ -184,9 +184,9 @@ export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked, onBackToStoref
                       id="back-to-storefront-button"
                       data-testid="back-to-storefront-button"
                       onClick={onBackToStorefront}
-                      className="mt-2 px-3 py-1.5 rounded-lg bg-[var(--muted)] border border-[#111111] text-[10px] font-bold text-[#111111] hover:bg-white transition"
+                      className="mt-2 px-3.5 py-2 rounded-xl bg-[var(--card)] border-2 border-[#111111] dark:border-white text-xs font-extrabold text-[#111111] dark:text-white hover:bg-[#111111] hover:text-white dark:hover:bg-white dark:hover:text-[#111111] shadow-[2px_2px_0px_0px_var(--border)] transition"
                     >
-                      ← Back to public storefront
+                      <span className="text-[#111111] dark:text-white font-extrabold">← Back to public storefront</span>
                     </button>
                   )}
                 </div>
@@ -279,15 +279,15 @@ export const OwnerGate: React.FC<OwnerGateProps> = ({ onUnlocked, onBackToStoref
         <div className="relative z-10" />
 
         <div className="relative z-10 max-w-md my-auto">
-          <blockquote className="font-display text-2xl sm:text-4xl font-extrabold leading-tight text-white mb-4">
+          <blockquote className="font-display text-2xl sm:text-4xl font-extrabold leading-tight text-white dark:text-[#111111] mb-4">
             “The best finds are the ones you can’t stop telling people about.”
           </blockquote>
-          <p className="text-xs font-bold text-white/80 uppercase tracking-widest">
+          <p className="text-xs font-bold text-white/80 dark:text-[#111111]/80 uppercase tracking-widest">
             — field notes from the hub
           </p>
         </div>
 
-        <div className="relative z-10 text-[10px] font-mono text-white/60">
+        <div className="relative z-10 text-[10px] font-mono text-white/60 dark:text-[#111111]/60">
           Raccoon Hub Curator Gateway v2.5
         </div>
       </div>

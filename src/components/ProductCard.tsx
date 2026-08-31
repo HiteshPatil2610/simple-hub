@@ -63,19 +63,24 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   return (
     <motion.div
+      layout
+      layoutId={`product-card-${product.id}`}
       id={`product-card-${product.id}`}
       data-testid={`product-card-${product.id}`}
       onClick={handleCardClick}
-      initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0, scale: 0.92, y: 20 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.92, y: 10 }}
       transition={{
-        duration: 0.35,
-        delay: Math.min(index * 0.04, 0.35),
-        ease: [0.25, 0.1, 0.25, 1],
+        type: 'spring',
+        stiffness: 350,
+        damping: 25,
+        mass: 0.8,
+        delay: Math.min(index * 0.03, 0.25),
       }}
-      whileHover={{ y: -4 }}
-      whileTap={{ scale: 0.985 }}
-      className={`group relative border-2 border-[#111111] rounded-[1.25rem] p-4 sm:p-5 flex flex-col justify-between shadow-[4px_4px_0px_0px_var(--border)] hover:shadow-[6px_6px_0px_0px_var(--border)] transition-all duration-200 cursor-pointer ${
+      whileHover={{ y: -6, scale: 1.01 }}
+      whileTap={{ scale: 0.97 }}
+      className={`group relative border-2 border-[#111111] rounded-[1.25rem] p-4 sm:p-5 flex flex-col justify-between shadow-[4px_4px_0px_0px_var(--border)] hover:shadow-[7px_7px_0px_0px_var(--border)] transition-all duration-300 ease-out cursor-pointer ${
         isHero
           ? 'bg-[#FF6B6B] text-[#111111]'
           : 'bg-[var(--card)] text-[var(--foreground)]'
