@@ -110,17 +110,6 @@ export default function App() {
       return;
     }
 
-    // ── Apple Liquid Glass Ring ───────────────────────────────────────────────
-    // Inject a separate DOM div at the circle edge. It is z-indexed above the
-    // view-transition snapshots so it renders on top of the clipping boundary.
-    const ring = document.createElement('div');
-    ring.className = `theme-glass-ring ${goingDark ? 'expanding' : 'shrinking'}`;
-    document.body.appendChild(ring);
-    // Remove after the longest animation (800ms) + a tiny buffer
-    ring.addEventListener('animationend', () => ring.remove(), { once: true });
-    setTimeout(() => ring.remove(), 900); // safety cleanup
-    // ─────────────────────────────────────────────────────────────────────────
-
     isTransitioning.current = true;
     const transitionClass = goingDark ? 'theme-going-dark' : 'theme-going-light';
     document.documentElement.classList.add('theme-transitioning', transitionClass);
