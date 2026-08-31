@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, Flame, ArrowUpDown, ShoppingBag, LayoutDashboard, BarChart3, Plus, Package, LayoutGrid, Grid, ArrowDown } from 'lucide-react';
 import { Product, AnalyticsSummary, ViewMode } from './types';
@@ -69,6 +70,71 @@ export default function App() {
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isCheckingOwnerAuth, setIsCheckingOwnerAuth] = useState(true);
 
+  // Dark mode state management
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('raccoon_hub_theme') === 'dark';
+    }
+    return false;
+  });
+
+  const isTransitioning = useRef(false);
+
+  // Synchronously update HTML dark class and storage when isDarkMode updates
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark', 'dark-mode');
+      localStorage.setItem('raccoon_hub_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark', 'dark-mode');
+      localStorage.setItem('raccoon_hub_theme', 'light');
+    }
+  }, [isDarkMode]);
+
+  // Dual-theme circular reveal/shrink transition using View Transitions API
+  const handleToggleDarkMode = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    if (isTransitioning.current) return;
+
+    const btn = e.currentTarget;
+    const rect = btn.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+
+    const endRadius = Math.hypot(
+      Math.max(x, window.innerWidth - x),
+      Math.max(y, window.innerHeight - y)
+    );
+
+    const goingDark = !isDarkMode;
+
+    document.documentElement.style.setProperty('--x', `${x}px`);
+    document.documentElement.style.setProperty('--y', `${y}px`);
+
+    if (!(document as any).startViewTransition) {
+      setIsDarkMode(goingDark);
+      return;
+    }
+
+    isTransitioning.current = true;
+    const transitionClass = goingDark ? 'theme-going-dark' : 'theme-going-light';
+    document.documentElement.classList.add('theme-transitioning', transitionClass);
+
+    const transition = (document as any).startViewTransition(() => {
+      flushSync(() => {
+        setIsDarkMode(goingDark);
+      });
+    });
+
+    transition.finished.finally(() => {
+      document.documentElement.classList.remove(
+        'theme-transitioning',
+        'theme-going-dark',
+        'theme-going-light'
+      );
+      isTransitioning.current = false;
+    });
+  }, [isDarkMode]);
+
   // Initial load & URL Hash listener
   useEffect(() => {
     loadStoreData();
@@ -91,15 +157,13 @@ export default function App() {
   }, []);
 
   // Silently re-validate a previously-stored JWT so returning owners
-  // aren't re-prompted every visit, without ever trusting session storage alone.
+  // aren't re-prompted every visit
   useEffect(() => {
     const token = getAuthToken();
     if (!token) {
       setIsCheckingOwnerAuth(false);
       return;
     }
-    // Verify the token with the server — if it's expired or tampered the
-    // server returns 401 and we clear the stale token.
     fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
       .then(res => {
         if (res.ok) {
@@ -154,11 +218,9 @@ export default function App() {
 
   // Seamless Affiliate Redirection Handler
   const handleAffiliateClick = async (product: Product) => {
-    // 1. Show immediate visual feedback toast
     setRedirectToastProduct(product);
 
     try {
-      // Record click telemetry beacon and retrieve final Amazon URL
       const res = await api.trackClick({
         productId: product.id,
         utmSource: 'raccoonhub',
@@ -171,7 +233,7 @@ export default function App() {
         return;
       }
     } catch {
-      // Fallback to server 302 redirect route
+      // Fallback to server redirect route
     }
 
     const redirectUrl = api.getRedirectUrl(product.id, {
@@ -214,7 +276,6 @@ export default function App() {
   const filteredProducts = useMemo(() => {
     let result = [...products];
 
-    // Search
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase().trim();
       result = result.filter(
@@ -225,14 +286,12 @@ export default function App() {
       );
     }
 
-    // Category filter
     if (selectedCategory !== 'All') {
       result = result.filter(
         p => p.category.toLowerCase() === selectedCategory.toLowerCase()
       );
     }
 
-    // Sorting
     result.sort((a, b) => {
       switch (sortBy) {
         case 'title-asc':
@@ -251,113 +310,117 @@ export default function App() {
   const isOwnerView = currentView === 'owner' || currentView === 'analytics' || currentView === 'admin';
 
   return (
-    <div className="min-h-screen bg-[#FFFBF0] text-[#2D3436] flex flex-col font-sans selection:bg-[#FF6B6B] selection:text-white">
-      {/* Navigation */}
+    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] flex flex-col font-sans selection:bg-[#FF6B6B] selection:text-white transition-colors duration-200">
+      {/* Navigation Header */}
       <Navbar
         onViewChange={changeView}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
         totalProducts={products.length}
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={handleToggleDarkMode}
       />
 
       {/* Main View Router */}
-      <main className="flex-1 pb-20 sm:pb-10">
+      <main className="flex-1 pb-16">
         <AnimatePresence mode="wait">
           {isOwnerView ? (
-            /* ================= PAGE 2: OWNER VIEW (RECORDS, STATS & ADD/REMOVE/EDIT PRODUCTS) ================= */
+            /* ================= PAGE 2: OWNER VIEW (RECORDS & PRODUCTS) ================= */
             <motion.div
               key="owner-view"
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
-              transition={{ duration: 0.28, ease: 'easeOut' }}
+              transition={{ duration: 0.25 }}
               className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6"
             >
               {/* Owner Header Bar */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-4 border-[#2D3436] pb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-[var(--border)]/20 pb-5">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full bg-[#FFE66D] border-2 border-[#2D3436] text-[10px] font-black uppercase text-[#2D3436]">
+                    <span className="px-2.5 py-0.5 rounded-full bg-[#FFE600] border-2 border-[#111111] shadow-[2px_2px_0px_0px_var(--border)] text-[10px] font-black uppercase text-[#111111]">
                       Owner Control Hub
                     </span>
-                    <span className="text-xs font-mono font-bold text-[#2D3436]/60">
+                    <span className="text-xs font-mono font-bold text-[var(--muted-text)]">
                       Live Catalog & Telemetry
                     </span>
                   </div>
-                  <h1 className="text-2xl sm:text-3xl font-black text-[#2D3436] mt-1">
-                    Raccoon Hub Records & Management
+                  <h1 className="text-2xl sm:text-3xl font-display font-extrabold text-[var(--foreground)] mt-1">
+                    Curator’s Desk & Records
                   </h1>
-                  <p className="text-xs sm:text-sm text-[#2D3436]/75 font-semibold mt-0.5">
-                    Control all products shown on the public storefront, track outbound clicks, and examine performance records.
-                  </p>
                 </div>
 
-                {/* Owner Sub Tabs Switcher */}
-                <div className="flex items-center gap-2 self-start sm:self-auto">
-                {isOwnerAuthed && (
-                  <button
-                    type="button"
-                    onClick={() => setIsChangePasswordOpen(true)}
-                    className="text-[10px] font-black uppercase tracking-wider text-[#2D3436]/60 hover:text-[#2D3436] underline"
-                    title="Change your password"
-                  >
-                    Change Password
-                  </button>
-                )}
-                {isOwnerAuthed && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      clearAuthToken();
-                      setIsOwnerAuthed(false);
-                    }}
-                    className="text-[10px] font-black uppercase tracking-wider text-[#2D3436]/60 hover:text-[#FF6B6B] underline"
-                    title="Lock the Owner Hub"
-                  >
-                    Lock
-                  </button>
-                )}
-                <div className="inline-flex p-1.5 bg-white border-3 border-[#2D3436] rounded-2xl shadow-[4px_4px_0px_0px_rgba(45,52,54,1)]">
-                  <button
-                    type="button"
-                    id="owner-tab-products"
-                    onClick={() => setOwnerSubTab('products')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition ${
-                      ownerSubTab === 'products'
-                        ? 'bg-[#FFE66D] text-[#2D3436] shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] border-2 border-[#2D3436]'
-                        : 'text-[#2D3436]/70 hover:text-[#2D3436]'
-                    }`}
-                  >
-                    <Package className="w-4 h-4" />
-                    <span>Manage Products</span>
-                  </button>
+                {/* Owner Sub Tabs & Actions */}
+                <div className="flex items-center gap-3 self-start sm:self-auto">
+                  {isOwnerAuthed && (
+                    <button
+                      type="button"
+                      id="change-password-button"
+                      data-testid="change-password-button"
+                      onClick={() => setIsChangePasswordOpen(true)}
+                      className="text-xs font-bold uppercase tracking-wider text-[var(--muted-text)] hover:text-[var(--foreground)] underline"
+                    >
+                      Change Password
+                    </button>
+                  )}
+                  {isOwnerAuthed && (
+                    <button
+                      type="button"
+                      id="logout-button"
+                      data-testid="logout-button"
+                      onClick={() => {
+                        clearAuthToken();
+                        setIsOwnerAuthed(false);
+                      }}
+                      className="text-xs font-bold uppercase tracking-wider text-[#FF6B6B] hover:underline"
+                    >
+                      Lock / Logout
+                    </button>
+                  )}
+                  <div className="inline-flex p-1 bg-[var(--card)] border-2 border-[var(--border)] rounded-xl shadow-[3px_3px_0px_0px_var(--border)]">
+                    <button
+                      type="button"
+                      id="manage-products-tab"
+                      data-testid="manage-products-tab"
+                      onClick={() => setOwnerSubTab('products')}
+                      className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition ${
+                        ownerSubTab === 'products'
+                          ? 'bg-[#FFE600] text-[#111111] border border-[#111111] shadow-[2px_2px_0px_0px_var(--border)]'
+                          : 'text-[var(--foreground)]/70 hover:text-[var(--foreground)]'
+                      }`}
+                    >
+                      <Package className="w-4 h-4" />
+                      <span>Manage Products</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    id="owner-tab-records"
-                    onClick={() => setOwnerSubTab('analytics')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition ${
-                      ownerSubTab === 'analytics'
-                        ? 'bg-[#4ECDC4] text-[#2D3436] shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] border-2 border-[#2D3436]'
-                        : 'text-[#2D3436]/70 hover:text-[#2D3436]'
-                    }`}
-                  >
-                    <BarChart3 className="w-4 h-4" />
-                    <span>Records & Clicks</span>
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      id="analytics-tab"
+                      data-testid="analytics-tab"
+                      onClick={() => setOwnerSubTab('analytics')}
+                      className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition ${
+                        ownerSubTab === 'analytics'
+                          ? 'bg-[#4ECDC4] text-[#111111] border border-[#111111] shadow-[2px_2px_0px_0px_#111111]'
+                          : 'text-[var(--foreground)]/70 hover:text-[var(--foreground)]'
+                      }`}
+                    >
+                      <BarChart3 className="w-4 h-4" />
+                      <span>Records & Clicks</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
               {/* Sub-view switcher: gated behind owner authentication */}
               {isCheckingOwnerAuth ? (
-                <div className="py-16 text-center text-sm font-bold text-[#2D3436]/60">Checking access…</div>
+                <div className="py-16 text-center text-sm font-bold text-[var(--muted-text)]">Checking access…</div>
               ) : !isOwnerAuthed ? (
                 <OwnerGate
                   onUnlocked={() => {
                     setIsOwnerAuthed(true);
                     refreshAnalytics();
                   }}
+                  onBackToStorefront={() => changeView('shop')}
                 />
               ) : ownerSubTab === 'products' ? (
                 <OwnerProductManager
@@ -386,188 +449,93 @@ export default function App() {
               )}
             </motion.div>
           ) : (
-            /* ================= PAGE 1: PUBLIC STOREFRONT (WHAT ALL USERS WILL SEE) ================= */
+            /* ================= PAGE 1: PUBLIC STOREFRONT (EXPRESSIVE HERO MATCHING SCREENSHOT 3 & 4) ================= */
             <motion.div
               key="storefront-view"
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
-              transition={{ duration: 0.28, ease: 'easeOut' }}
+              transition={{ duration: 0.25 }}
             >
-              {/* Hero Section */}
-              <div className="relative overflow-hidden bg-gradient-to-b from-[#FFE66D]/25 via-[#FFFBF0] to-[#FFFBF0] border-b-4 border-[#2D3436] py-10 sm:py-16 px-4 sm:px-6 lg:px-8">
-                {/* Decorative background subtle grid pattern */}
-                <div className="absolute inset-0 opacity-[0.04] pointer-events-none bg-[radial-gradient(#2D3436_1px,transparent_1px)] [background-size:16px_16px]" />
-
+              {/* Expressive Hero Section */}
+              <div className="relative border-b-3 border-[var(--border)] py-10 sm:py-14 px-4 sm:px-6 lg:px-8 bg-[var(--background)]">
                 <div className="max-w-7xl mx-auto">
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-                    {/* Left Column: Headline, Copy & Action CTAs */}
-                    <div className="lg:col-span-7 text-left space-y-5">
-                      <motion.div
-                        initial={{ scale: 0.9, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        transition={{ duration: 0.3 }}
-                        className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FFE66D] border-3 border-[#2D3436] text-[#2D3436] text-xs font-black uppercase shadow-[3px_3px_0px_0px_rgba(45,52,54,1)]"
-                      >
-                        <span className="text-base leading-none">🦝</span>
-                        <span>Raccoon Finds Hub</span>
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#2D3436]" />
-                        <span className="text-[#FF6B6B] font-black">Hand-Picked Amazon Finds</span>
-                      </motion.div>
+                    {/* Left Column: Badges, Oversized Headline & CTAs */}
+                    <div className="lg:col-span-7 space-y-6 text-left">
+                      {/* Badges Pill Row */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-3 py-1 rounded-full bg-[#00E5FF] text-[#111111] text-[10px] font-black uppercase tracking-wider border-2 border-[#111111] shadow-[2px_2px_0px_0px_var(--border)]">
+                          RACCOON FINDS / VOL. 01
+                        </span>
+                        <span className="px-3 py-1 rounded-full bg-[#FFE600] text-[#111111] text-[10px] font-black uppercase tracking-wider border-2 border-[#111111] shadow-[2px_2px_0px_0px_var(--border)]">
+                          A SMALL INTERNET TREASURE MAP
+                        </span>
+                      </div>
 
-                      <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-[#2D3436] tracking-tight leading-[1.12]">
-                        Discover{' '}
-                        <span className="relative inline-block px-3 py-1 rounded-2xl bg-[#FF6B6B] text-white border-3 border-[#2D3436] shadow-[4px_4px_0px_0px_rgba(45,52,54,1)] -rotate-1">
-                          Viral Amazon Finds
+                      {/* Main Headline (Matching Screenshot 3) */}
+                      <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-extrabold text-[var(--foreground)] tracking-tight leading-[0.92]">
+                        Good <br />
+                        things, <br />
+                        <span className="relative inline-block px-3 py-0.5 rounded-xl bg-[#FF5722] text-white border-3 border-[var(--border)] shadow-[4px_4px_0px_0px_var(--border)] -rotate-1">
+                          found on
                         </span>{' '}
-                        Worth Every Cent.
+                        purpose.
                       </h1>
 
-                      <p className="text-sm sm:text-lg text-[#2D3436]/85 font-semibold max-w-xl leading-relaxed">
-                        Curated viral gadgets, aesthetic desk setup upgrades, and clever everyday novelties. Tested finds with direct 1-click links straight to Amazon.
+                      {/* Tagline */}
+                      <p className="text-sm sm:text-base text-[var(--muted-text)] font-medium max-w-lg leading-relaxed">
+                        A lovingly edited corner of the internet for clever objects, useful oddities, and the little upgrades that make everyday life feel more like yours.
                       </p>
 
-                      {/* CTA Buttons Row */}
-                      <div className="flex flex-wrap items-center gap-3 pt-2">
+                      {/* Hero Actions */}
+                      <div className="flex flex-wrap items-center gap-4 pt-2">
                         <a
                           href="#product-viewing-area"
+                          id="explore-finds-button"
+                          data-testid="explore-finds-button"
                           onClick={(e) => {
                             e.preventDefault();
                             document.getElementById('product-viewing-area')?.scrollIntoView({ behavior: 'smooth' });
                           }}
-                          className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#4ECDC4] hover:bg-[#3dbdb5] text-[#2D3436] font-black text-xs sm:text-sm uppercase tracking-wider border-3 border-[#2D3436] shadow-[4px_4px_0px_0px_rgba(45,52,54,1)] active:translate-y-0.5 active:shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] transition cursor-pointer"
+                          className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-[#FF5722] hover:bg-[#e84e1b] text-white font-black text-xs sm:text-sm uppercase tracking-wider border-2 border-[var(--border)] shadow-[4px_4px_0px_0px_var(--border)] active:translate-y-0.5 transition cursor-pointer"
                         >
-                          <Flame className="w-4 h-4 text-[#2D3436] fill-[#FFD93D]" />
-                          <span>Explore Trending Finds</span>
+                          <span>Explore the finds</span>
                           <ArrowDown className="w-4 h-4 stroke-[3]" />
                         </a>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSortBy('popular');
-                            setSelectedCategory('All');
-                            document.getElementById('product-viewing-area')?.scrollIntoView({ behavior: 'smooth' });
-                          }}
-                          className="inline-flex items-center gap-2 px-4 py-3 rounded-2xl bg-white hover:bg-[#FFE66D] text-[#2D3436] font-black text-xs sm:text-sm uppercase tracking-wider border-3 border-[#2D3436] shadow-[4px_4px_0px_0px_rgba(45,52,54,1)] active:translate-y-0.5 active:shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] transition cursor-pointer"
-                        >
-                          <Sparkles className="w-4 h-4 text-[#FF6B6B]" />
-                          <span>Most Popular</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          id="hero-manage-products-btn"
-                          onClick={() => {
-                            changeView('owner');
-                            setOwnerSubTab('products');
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3.5 py-3 rounded-2xl bg-white hover:bg-slate-100 text-[#2D3436]/80 font-bold text-xs uppercase border-2 border-[#2D3436]/40 transition cursor-pointer"
-                          title="Open Owner & Records Product Manager"
-                        >
-                          <LayoutDashboard className="w-3.5 h-3.5" />
-                          <span>Owner Hub</span>
-                        </button>
-                      </div>
-
-                      {/* Trust Badges Bar */}
-                      <div className="flex flex-wrap items-center gap-3 pt-3 text-xs font-black text-[#2D3436]">
-                        <div className="flex items-center gap-1.5 bg-white border-2 border-[#2D3436] px-3 py-1 rounded-full shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                          <span>Direct Amazon Links</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 bg-white border-2 border-[#2D3436] px-3 py-1 rounded-full shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
-                          <span className="w-2 h-2 rounded-full bg-[#FF6B6B]"></span>
-                          <span>Verified Affiliate Tags</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 bg-white border-2 border-[#2D3436] px-3 py-1 rounded-full shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
-                          <span className="w-2 h-2 rounded-full bg-[#FFD93D]"></span>
-                          <span>Hand-Picked Quality</span>
+                        <div className="flex items-center gap-2 text-xs font-bold text-[var(--muted-text)]">
+                          <span className="w-5 h-5 rounded-full bg-[#4ECDC4]/30 border border-[var(--border)] flex items-center justify-center text-[10px] text-[var(--foreground)] font-black">✓</span>
+                          <span>Direct links to Amazon</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Right Column: Gamer Raccoon Mascot Spotlight Card */}
-                    <div className="lg:col-span-5 relative mt-4 lg:mt-0">
-                      {/* Floating Sticker 1 - Top Right */}
-                      <motion.div
-                        animate={{ y: [0, -6, 0] }}
-                        transition={{ repeat: Infinity, duration: 4, ease: 'easeInOut' }}
-                        className="absolute -top-5 -right-3 z-20 bg-[#FF6B6B] text-white border-3 border-[#2D3436] px-3.5 py-1.5 rounded-2xl text-xs font-black uppercase shadow-[3px_3px_0px_0px_rgba(45,52,54,1)] rotate-6 flex items-center gap-1.5"
-                      >
-                        <Flame className="w-4 h-4 fill-white" />
-                        <span>⚡ Cyber Gamer Vibes</span>
-                      </motion.div>
+                    {/* Right Column: Hero Framed Box (Matching Screenshot 3) */}
+                    <div className="lg:col-span-5 relative">
+                      <div className="relative bg-[#FFE600] border-3 border-[#111111] rounded-[1.75rem] p-4 sm:p-5 shadow-[6px_6px_0px_0px_var(--border)] overflow-hidden">
+                        {/* Orbit / Dashed decorative lines */}
+                        <div className="absolute inset-0 opacity-20 pointer-events-none border-2 border-dashed border-[#111111] rounded-[1.75rem] m-2" />
 
-                      {/* Floating Sticker 2 - Bottom Left */}
-                      <motion.div
-                        animate={{ y: [0, 6, 0] }}
-                        transition={{ repeat: Infinity, duration: 3.5, ease: 'easeInOut' }}
-                        className="absolute -bottom-4 -left-4 z-20 bg-[#FFE66D] text-[#2D3436] border-3 border-[#2D3436] px-3.5 py-1.5 rounded-2xl text-xs font-black uppercase shadow-[3px_3px_0px_0px_rgba(45,52,54,1)] -rotate-3 flex items-center gap-1.5"
-                      >
-                        <span>🎮 AI Curated Amazon Finds</span>
-                      </motion.div>
-
-                      {/* Main Hero Gamer Raccoon Mascot Showcase Box */}
-                      <div className="relative bg-[#1A1E24] border-4 border-[#2D3436] rounded-[2.5rem] p-5 sm:p-6 shadow-[10px_10px_0px_0px_rgba(45,52,54,1)] overflow-hidden">
-                        {/* Glow halo overlay */}
-                        <div className="absolute -top-20 -right-20 w-60 h-60 bg-[#FF6B6B]/20 rounded-full blur-3xl pointer-events-none" />
-                        <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-[#4ECDC4]/20 rounded-full blur-3xl pointer-events-none" />
-
-                        <div className="relative z-10 flex items-center justify-between border-b-2 border-white/10 pb-3 mb-4">
-                          <div className="flex items-center gap-2">
-                            <span className="w-3 h-3 rounded-full bg-[#FF6B6B] border border-[#2D3436]" />
-                            <span className="w-3 h-3 rounded-full bg-[#FFE66D] border border-[#2D3436]" />
-                            <span className="w-3 h-3 rounded-full bg-[#4ECDC4] border border-[#2D3436]" />
-                          </div>
-                          <span className="text-[11px] font-black uppercase tracking-wider text-[#FFE66D] flex items-center gap-1">
-                            <span>🦝</span> Official Mascot
-                          </span>
+                        {/* Sticker badge */}
+                        <div className="absolute top-4 left-4 z-20 bg-[#FF6B6B] text-white border-2 border-[#111111] px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_var(--border)] -rotate-3">
+                          keep looking closer
                         </div>
 
-                        {/* Gamer Raccoon Mascot Featured Frame */}
-                        <div className="relative aspect-square sm:aspect-[4/3] bg-[#0F1115] border-3 border-[#2D3436] rounded-2xl overflow-hidden mb-4 group shadow-inner">
+                        {/* Framed photo */}
+                        <div className="relative aspect-[4/3] bg-[#111111] border-2 border-[#111111] rounded-xl overflow-hidden mb-3">
                           <img
-                            src="/raccoon-mascot.jpg"
-                            alt="Raccoon Hub Mascot"
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            src="https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=800&auto=format&fit=crop&q=80"
+                            alt="Curated Gadgets Composition"
+                            className="w-full h-full object-cover"
                           />
-                          <div className="absolute inset-0 bg-gradient-to-t from-[#1A1E24] via-transparent to-transparent opacity-60 pointer-events-none" />
-                          
-                          <div className="absolute bottom-3 left-3 right-3 p-3 bg-[#1A1E24]/90 backdrop-blur-md border-2 border-white/20 rounded-xl">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <h4 className="text-white font-black text-xs sm:text-sm">
-                                  Gamer Raccoon Curator
-                                </h4>
-                                <p className="text-[10px] text-white/70 font-semibold">
-                                  Scouring Amazon 24/7 for viral finds
-                                </p>
-                              </div>
-                              <span className="px-2 py-0.5 rounded-full bg-[#FF6B6B] text-white text-[9px] font-black uppercase border border-white/20">
-                                Active
-                              </span>
-                            </div>
-                          </div>
                         </div>
 
-                        {/* Mascot Info / Stat Counter */}
-                        <div className="relative z-10 flex items-center justify-between bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-white font-bold">
-                          <div>
-                            <div className="text-[10px] uppercase font-black text-white/60">Live Storefront Catalog</div>
-                            <div className="text-sm font-black text-[#4ECDC4]">{products.length} Curated Amazon Finds</div>
-                          </div>
-                          <a
-                            href="#product-viewing-area"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              document.getElementById('product-viewing-area')?.scrollIntoView({ behavior: 'smooth' });
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-[#FFE66D] hover:bg-[#ffd93d] text-[#2D3436] font-black text-[11px] uppercase border-2 border-[#2D3436] shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] active:translate-y-0.5 cursor-pointer"
-                          >
-                            Explore Finds
-                          </a>
+                        {/* Field note tag */}
+                        <div className="flex items-center justify-between text-[9px] font-mono font-bold text-[#111111]">
+                          <span className="bg-white px-2 py-0.5 rounded border border-[#111111]">
+                            field note 014 / for curious people
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -575,150 +543,145 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Filter and Control Bar */}
-              <div className="sticky top-16 z-30 bg-[#FFFBF0]/95 backdrop-blur-md border-b-4 border-[#2D3436] py-3 sm:py-4 shadow-sm">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-2.5 sm:space-y-3">
-                  {/* Categories scrolling bar */}
-                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+              {/* Section Header Bar (Matching Screenshot 4) */}
+              <div id="product-viewing-area" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-4">
+                <div className="border-t-2 border-[var(--border)]/20 pt-6">
+                  <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[var(--muted-text)] mb-1">
+                    THE CURRENT STASH
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b-2 border-[var(--border)] pb-4">
+                    <h2 className="font-display text-4xl sm:text-5xl font-extrabold text-[var(--foreground)] tracking-tight">
+                      Worth a closer look<span className="text-[#FF5722]">.</span>
+                    </h2>
+                    <span
+                      id="result-count"
+                      data-testid="result-count"
+                      className="inline-block px-3 py-1 rounded-md bg-[#00E5FF] text-[#111111] text-xs font-black uppercase tracking-wider border-2 border-[#111111] shadow-[2px_2px_0px_0px_var(--border)] self-start sm:self-auto"
+                    >
+                      {filteredProducts.length} finds in the wild
+                    </span>
+                  </div>
+                </div>
+
+                {/* Filter and Sort Toolbar */}
+                <div className="py-4 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+                  {/* Category Pills */}
+                  <div
+                    id="category-filters"
+                    data-testid="category-filters"
+                    className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1"
+                  >
                     {CATEGORIES.map(category => (
                       <button
                         key={category}
                         id={`category-btn-${category.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
+                        data-testid={
+                          category === 'All'
+                            ? 'category-filter-all-finds'
+                            : `category-filter-${category.toLowerCase().replace(/[^a-z0-9]/g, '-')}`
+                        }
                         onClick={() => setSelectedCategory(category)}
-                        className={`min-h-[38px] px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-black uppercase tracking-wider whitespace-nowrap transition border-2 border-[#2D3436] active:translate-y-0.5 ${
+                        className={`min-h-[38px] px-4 py-2 rounded-full text-xs font-black uppercase tracking-wider whitespace-nowrap transition border-2 border-[#111111] active:translate-y-0.5 ${
                           selectedCategory === category
-                            ? 'bg-[#FF6B6B] text-white shadow-[3px_3px_0px_0px_rgba(45,52,54,1)]'
-                            : 'bg-white text-[#2D3436] hover:bg-[#FFE66D] shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]'
+                            ? 'bg-[#4ECDC4] text-[#111111] shadow-[2px_2px_0px_0px_var(--border)]'
+                            : 'bg-[var(--card)] text-[var(--foreground)] hover:bg-[#FFE600] hover:text-[#111111] shadow-[2px_2px_0px_0px_var(--border)]'
                         }`}
                       >
-                        {category}
+                        {category === 'All' ? 'All finds' : category}
                       </button>
                     ))}
                   </div>
 
-                  {/* Sub row: Count & Sort */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[#2D3436] font-bold text-[11px] sm:text-xs">
-                        Showing <strong className="font-black text-[#FF6B6B]">{filteredProducts.length}</strong> Amazon items
-                      </span>
+                  {/* Sort select & clear */}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex items-center gap-1.5 bg-[var(--card)] border-2 border-[var(--border)] rounded-xl px-3 py-1.5 shadow-[2px_2px_0px_0px_var(--border)] min-h-[38px]">
+                      <ArrowUpDown className="w-3.5 h-3.5 text-[var(--foreground)]" />
+                      <select
+                        id="sort-select"
+                        data-testid="sort-select"
+                        value={sortBy}
+                        onChange={e => setSortBy(e.target.value as any)}
+                        className="bg-transparent text-xs font-black uppercase text-[var(--foreground)] focus:outline-none cursor-pointer"
+                      >
+                        <option value="popular">Most curious</option>
+                        <option value="recent">Recently added</option>
+                        <option value="title-asc">Title: A to Z</option>
+                      </select>
                     </div>
 
-                    <div className="flex items-center gap-2 sm:gap-3">
-                      {/* Grid Layout Mode Switcher */}
-                      <div className="flex items-center p-1 bg-white border-2 border-[#2D3436] rounded-xl shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
-                        <button
-                          type="button"
-                          id="layout-bento-btn"
-                          onClick={() => setLayoutMode('bento')}
-                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black uppercase transition ${
-                            layoutMode === 'bento'
-                              ? 'bg-[#FFE66D] text-[#2D3436] border border-[#2D3436] shadow-[1px_1px_0px_0px_rgba(45,52,54,1)]'
-                              : 'text-[#2D3436]/60 hover:text-[#2D3436]'
-                          }`}
-                          title="Asymmetric Bento Grid Layout"
-                        >
-                          <LayoutGrid className="w-3.5 h-3.5" />
-                          <span>Bento</span>
-                        </button>
-                        <button
-                          type="button"
-                          id="layout-classic-btn"
-                          onClick={() => setLayoutMode('classic')}
-                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black uppercase transition ${
-                            layoutMode === 'classic'
-                              ? 'bg-[#4ECDC4] text-[#2D3436] border border-[#2D3436] shadow-[1px_1px_0px_0px_rgba(45,52,54,1)]'
-                              : 'text-[#2D3436]/60 hover:text-[#2D3436]'
-                          }`}
-                          title="Uniform Classic Grid Layout"
-                        >
-                          <Grid className="w-3.5 h-3.5" />
-                          <span>Grid</span>
-                        </button>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 bg-white border-2 border-[#2D3436] rounded-xl px-2.5 sm:px-3 py-1 shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] min-h-[36px]">
-                        <ArrowUpDown className="w-3.5 h-3.5 text-[#2D3436]" />
-                        <select
-                          id="sort-select"
-                          value={sortBy}
-                          onChange={e => setSortBy(e.target.value as any)}
-                          className="bg-transparent text-[11px] sm:text-xs font-black uppercase text-[#2D3436] focus:outline-none cursor-pointer"
-                        >
-                          <option value="popular">Most Popular</option>
-                          <option value="recent">Recently Added</option>
-                          <option value="title-asc">Title: A to Z</option>
-                        </select>
-                      </div>
-
-                      {(selectedCategory !== 'All' || searchTerm) && (
-                        <button
-                          onClick={() => {
-                            setSelectedCategory('All');
-                            setSearchTerm('');
-                          }}
-                          className="text-[#FF6B6B] hover:text-[#2D3436] font-black underline uppercase text-xs"
-                        >
-                          Reset
-                        </button>
-                      )}
-                    </div>
+                    {(selectedCategory !== 'All' || searchTerm) && (
+                      <button
+                        id="clear-filters-button"
+                        data-testid="clear-filters-button"
+                        onClick={() => {
+                          setSelectedCategory('All');
+                          setSearchTerm('');
+                        }}
+                        className="text-[#FF6B6B] hover:underline font-black text-xs uppercase"
+                      >
+                        Clear filters
+                      </button>
+                    )}
                   </div>
                 </div>
-              </div>
 
-              {/* Product Grid: Displays Image, Title, Description, and Amazon CTA ONLY */}
-              <div id="product-viewing-area" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-                {isLoading ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
-                    {[...Array(8)].map((_, i) => (
-                      <div key={i} className="bg-white rounded-[2rem] border-4 border-[#2D3436] p-5 space-y-4 shadow-[6px_6px_0px_0px_rgba(45,52,54,1)] animate-pulse">
-                        <div className="aspect-square bg-[#FFE66D]/30 border-2 border-[#2D3436] rounded-[1.5rem]"></div>
-                        <div className="h-5 bg-[#2D3436]/20 rounded-md w-3/4"></div>
-                        <div className="h-4 bg-[#2D3436]/10 rounded-md w-full"></div>
-                        <div className="h-10 bg-[#FFD93D]/50 rounded-xl border-2 border-[#2D3436]"></div>
-                      </div>
-                    ))}
-                  </div>
-                ) : filteredProducts.length === 0 ? (
-                  <div className="text-center py-16 bg-white rounded-[2rem] border-4 border-[#2D3436] shadow-[8px_8px_0px_0px_rgba(45,52,54,1)] max-w-lg mx-auto p-8">
-                    <div className="w-14 h-14 rounded-2xl bg-[#FFE66D] border-2 border-[#2D3436] text-[#2D3436] flex items-center justify-center mx-auto mb-3 shadow-[3px_3px_0px_0px_rgba(45,52,54,1)] text-2xl">
-                      🦝
+                {/* Product Grid */}
+                <div className="py-4">
+                  {isLoading ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                      {[...Array(8)].map((_, i) => (
+                        <div key={i} className="bg-[var(--card)] rounded-2xl border-2 border-[var(--border)] p-4 space-y-4 shadow-[4px_4px_0px_0px_var(--border)] animate-pulse">
+                          <div className="aspect-square bg-[var(--muted)] border-2 border-[var(--border)] rounded-xl" />
+                          <div className="h-4 bg-[var(--muted)] rounded-md w-3/4" />
+                          <div className="h-3 bg-[var(--muted)] rounded-md w-full" />
+                          <div className="h-10 bg-[var(--muted)] rounded-xl border-2 border-[var(--border)]" />
+                        </div>
+                      ))}
                     </div>
-                    <h3 className="text-lg font-black text-[#2D3436]">No matching finds</h3>
-                    <p className="text-xs text-[#2D3436]/70 mt-1 font-bold">
-                      Try adjusting your search or category filters to find curated Amazon products.
-                    </p>
-                    <button
-                      onClick={() => {
-                        setSelectedCategory('All');
-                        setSearchTerm('');
-                      }}
-                      className="mt-5 px-5 py-2.5 bg-[#FF6B6B] text-white border-2 border-[#2D3436] rounded-xl text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_0px_rgba(45,52,54,1)] hover:translate-y-0.5"
+                  ) : filteredProducts.length === 0 ? (
+                    <div
+                      id="empty-state"
+                      data-testid="empty-state"
+                      className="text-center py-16 bg-[var(--card)] rounded-2xl border-2 border-[var(--border)] shadow-[4px_4px_0px_0px_var(--border)] max-w-lg mx-auto p-8"
                     >
-                      Clear Filters
-                    </button>
-                  </div>
-                ) : (
-                  <div
-                    className={
-                      layoutMode === 'bento'
-                        ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 grid-flow-dense'
-                        : 'grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6'
-                    }
-                  >
-                    {filteredProducts.map((product, idx) => (
-                      <ProductCard
-                        key={product.id}
-                        product={product}
-                        index={idx}
-                        bentoVariant={getBentoVariantForIndex(product, idx)}
-                        onQuickView={p => setQuickViewProduct(p)}
-                        onAffiliateClick={handleAffiliateClick}
-                      />
-                    ))}
-                  </div>
-                )}
+                      <div className="w-12 h-12 rounded-xl bg-[#FFE600] border-2 border-[#111111] text-[#111111] flex items-center justify-center mx-auto mb-3 shadow-[2px_2px_0px_0px_#111111] text-2xl">
+                        🦝
+                      </div>
+                      <h3 className="text-lg font-display font-extrabold text-[var(--foreground)]">No matching finds</h3>
+                      <p className="text-xs text-[var(--muted-text)] mt-1 font-bold">
+                        Try adjusting your search or category filters to discover products.
+                      </p>
+                      <button
+                        id="empty-clear-button"
+                        data-testid="empty-clear-button"
+                        onClick={() => {
+                          setSelectedCategory('All');
+                          setSearchTerm('');
+                        }}
+                        className="mt-5 px-5 py-2.5 bg-[#FF5722] text-white border-2 border-[#111111] rounded-xl text-xs font-black uppercase tracking-wider shadow-[3px_3px_0px_0px_#111111] hover:translate-y-0.5"
+                      >
+                        Clear Filters
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      id="product-grid"
+                      data-testid="product-grid"
+                      className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6"
+                    >
+                      {filteredProducts.map((product, idx) => (
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          index={idx}
+                          bentoVariant={getBentoVariantForIndex(product, idx)}
+                          onQuickView={p => setQuickViewProduct(p)}
+                          onAffiliateClick={handleAffiliateClick}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </motion.div>
           )}
@@ -765,3 +728,4 @@ export default function App() {
     </div>
   );
 }
+

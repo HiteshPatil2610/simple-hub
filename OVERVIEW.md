@@ -4,7 +4,7 @@
 
 Raccoon Hub is a lightweight, high-performance affiliate storefront and outbound tracking platform built for Amazon Associates. It's designed for content creators, curators, and niche site owners who want to share hand-picked Amazon recommendations without the overhead of a full e-commerce CMS.
 
-The design is a retro-modern neo-brutalist aesthetic — bold typography, playful accents, smooth animations via **Motion**, styled with **Tailwind CSS**.
+The design is a retro-modern neo-brutalist aesthetic — bold typography, playful accents, smooth animations via **Motion**, styled with **Tailwind CSS** and dynamic CSS color variables.
 
 ---
 
@@ -12,8 +12,13 @@ The design is a retro-modern neo-brutalist aesthetic — bold typography, playfu
 
 ### Public Storefront
 - Responsive card grid of owner-entered Amazon finds — image, title, description, category badge, and a "View on Amazon" button.
-- Real-time search, category filtering, and a mobile bottom-dock navigation.
-- Quick-preview modal for a product before committing to the outbound click.
+- **Neo-Brutalist Design System**: Solid `#111111` structural borders with dynamic `var(--border)` offset shadows (turning crisp white in Dark Mode).
+- **Frosted Glass Navigation Header**: Translucent background (`bg-[var(--nav-bg)]`) with `backdrop-blur-md`.
+- **Circular View Transitions API Theme Toggle**:
+  - **Light → Dark Mode**: Expanding Dark Mode circle originating from toggle button coordinates.
+  - **Dark → Light Mode**: Shrinking Dark Mode circle collapsing back into toggle button coordinates.
+  - Powered by native browser `@keyframes theme-circle-expand` and `@keyframes theme-circle-shrink` for 60 FPS performance and zero 1-frame flashes.
+- Real-time search, category filtering (with interactive yellow hover states), and quick-preview modal.
 
 ### Direct Amazon Affiliate Link Engine
 - Accepts any valid Amazon link: standard `amazon.com/dp/...` affiliate URLs or shortened `amzn.to/...` links.

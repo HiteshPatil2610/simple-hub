@@ -14,6 +14,8 @@ Raccoon Hub lets content creators, curators, and niche site owners share hand-pi
 
 ## ✨ Features
 
+- **Neo-Brutalist design system** — bold typography, curated HSL color tokens, solid `#111111` borders, frosted glass header backdrop, and yellow interactive hover states.
+- **Circular View Transitions theme toggle** — hardware-accelerated circular reveal (Light → Dark) and shrinking collapse (Dark → Light) using the native Browser View Transitions API (`@keyframes theme-circle-expand` / `theme-circle-shrink`).
 - **Curated storefront** — a responsive card grid with real-time search and category filters. Products are entered by the owner and displayed with image, title, description, category, and a "View on Amazon" button.
 - **Amazon-only affiliate links** — paste any `amazon.com/dp/...` link or `amzn.to/...` short link; affiliate tags and UTM parameters are applied automatically. Only Amazon platform is supported.
 - **Server-side redirect & telemetry** — every outbound click routes through a tracking endpoint that logs timestamp, device type, referrer, and UTM data *before* forwarding the visitor, with no client-side delay.

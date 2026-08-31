@@ -1,6 +1,6 @@
 # Raccoon Hub Project Status
 
-Last updated: 2026-08-28
+Last updated: 2026-08-31
 
 ---
 
@@ -39,6 +39,16 @@ The project is scoped exclusively to **Amazon Associates**. It does not use pric
 ---
 
 ## Completed Tasks
+
+### UI Design System & Theme Engine
+- **Neo-Brutalist Theme System**: Custom HSL/CSS token design system with light and dark mode support (`--background`, `--foreground`, `--border`, `--nav-bg`, `--card`).
+- **Standardized Border & Offset Shadows**: Cards, category buttons, and product wrappers use solid black (`#111111`) structural borders with dynamic `--border` offset shadows (turning white `#FFFFFF` in dark mode).
+- **Glassmorphism Header**: Navigation bar featuring frosted glass background (`bg-[var(--nav-bg)]` + `backdrop-blur-md`).
+- **Hardware-Accelerated View Transitions API Theme Toggle**:
+  - **Light → Dark Mode**: Expanding Dark Mode circle originating from the click coordinates of the mode toggle button.
+  - **Dark → Light Mode**: Shrinking Dark Mode circle collapsing back into the mode toggle button coordinates.
+  - Implemented via compositor-thread CSS keyframes (`@keyframes theme-circle-expand` & `@keyframes theme-circle-shrink`) for jitter-free 60 FPS performance and zero 1-frame black screen flashes.
+- **Interactive Category Filters**: Category pills feature dynamic hover effects (yellow background + black text).
 
 ### Security and secrets
 

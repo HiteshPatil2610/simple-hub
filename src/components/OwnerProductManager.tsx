@@ -64,23 +64,23 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
   return (
     <div
       id="owner-product-manager"
-      className="bg-white rounded-[2rem] border-4 border-[#2D3436] p-4 sm:p-7 shadow-[8px_8px_0px_0px_rgba(45,52,54,1)] space-y-6"
+      className="bg-[var(--card)] rounded-[1.75rem] border-3 border-[var(--border)] p-4 sm:p-7 shadow-[6px_6px_0px_0px_var(--border)] space-y-6 text-[var(--foreground)]"
     >
       {/* Section Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-3 border-[#2D3436] pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-2 border-[var(--border)]/20 pb-5">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full bg-[#FFE66D] border-2 border-[#2D3436] text-[10px] font-black uppercase text-[#2D3436]">
+            <span className="px-2.5 py-0.5 rounded-full bg-[#FFE600] border-2 border-[#111111] text-[10px] font-black uppercase text-[#111111]">
               Store Catalog Management
             </span>
-            <span className="text-[11px] font-mono font-bold text-[#2D3436]/70">
+            <span className="text-[11px] font-mono font-bold text-[var(--muted-text)]">
               {filteredProducts.length} of {products.length} {products.length === 1 ? 'item' : 'items'}
             </span>
           </div>
-          <h3 className="text-xl sm:text-2xl font-black text-[#2D3436] tracking-tight mt-1">
+          <h3 className="text-xl sm:text-2xl font-display font-extrabold text-[var(--foreground)] tracking-tight mt-1">
             Listed Products & Direct Links
           </h3>
-          <p className="text-xs sm:text-sm text-[#2D3436]/75 mt-0.5 font-medium">
+          <p className="text-xs sm:text-sm text-[var(--muted-text)] mt-0.5 font-medium">
             Edit titles, images, descriptions, direct Amazon links, or remove products.
           </p>
         </div>
@@ -88,14 +88,16 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
         {/* Action Controls: Add Product & Layout Toggle */}
         <div className="flex items-center gap-2.5">
           {/* Desktop Layout Switcher */}
-          <div className="hidden sm:inline-flex p-1 bg-[#FFFBF0] border-2 border-[#2D3436] rounded-xl shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
+          <div className="hidden sm:inline-flex p-1 bg-[var(--muted)] border-2 border-[var(--border)] rounded-xl shadow-[2px_2px_0px_0px_var(--border)]">
             <button
               type="button"
+              id="list-view-button"
+              data-testid="list-view-button"
               onClick={() => setLayoutMode('list')}
               className={`p-1.5 rounded-lg text-xs font-black transition ${
                 layoutMode === 'list'
-                  ? 'bg-[#FFE66D] text-[#2D3436] border border-[#2D3436] shadow-[1px_1px_0px_0px_rgba(45,52,54,1)]'
-                  : 'text-[#2D3436]/60 hover:text-[#2D3436]'
+                  ? 'bg-[#FFE600] text-[#111111] border border-[#111111] shadow-[1px_1px_0px_0px_#111111]'
+                  : 'text-[var(--foreground)]/60 hover:text-[var(--foreground)]'
               }`}
               title="List View"
             >
@@ -103,11 +105,13 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
             </button>
             <button
               type="button"
+              id="grid-view-button"
+              data-testid="grid-view-button"
               onClick={() => setLayoutMode('grid')}
               className={`p-1.5 rounded-lg text-xs font-black transition ${
                 layoutMode === 'grid'
-                  ? 'bg-[#FFE66D] text-[#2D3436] border border-[#2D3436] shadow-[1px_1px_0px_0px_rgba(45,52,54,1)]'
-                  : 'text-[#2D3436]/60 hover:text-[#2D3436]'
+                  ? 'bg-[#FFE600] text-[#111111] border border-[#111111] shadow-[1px_1px_0px_0px_#111111]'
+                  : 'text-[var(--foreground)]/60 hover:text-[var(--foreground)]'
               }`}
               title="Grid View"
             >
@@ -120,9 +124,10 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.96 }}
             id="owner-add-product-btn"
+            data-testid="add-product-button"
             type="button"
             onClick={onAddProduct}
-            className="min-h-[44px] flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#4ECDC4] hover:bg-[#3dbdb5] text-[#2D3436] font-black uppercase text-xs sm:text-sm tracking-wider border-2 border-[#2D3436] shadow-[3px_3px_0px_0px_rgba(45,52,54,1)] active:translate-y-0.5 transition"
+            className="min-h-[44px] flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#FF5722] hover:bg-[#e84e1b] text-white font-black uppercase text-xs sm:text-sm tracking-wider border-2 border-[#111111] shadow-[3px_3px_0px_0px_#111111] active:translate-y-0.5 transition"
           >
             <Plus className="w-4 h-4 stroke-[3]" />
             <span>Add New Product</span>
@@ -134,14 +139,15 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         {/* Search */}
         <div className="relative flex-1">
-          <Search className="w-4 h-4 text-[#2D3436]/50 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-[var(--foreground)]/50 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             id="owner-search-input"
+            data-testid="owner-search-input"
             type="text"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             placeholder="Search by product name, description, ID..."
-            className="w-full pl-10 pr-10 py-2.5 bg-[#FFFBF0] border-2 border-[#2D3436] rounded-xl text-xs text-[#2D3436] font-semibold placeholder-[#2D3436]/50 shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] focus:outline-none focus:bg-white focus:ring-2 focus:ring-[#FF6B6B] min-h-[44px]"
+            className="w-full pl-10 pr-10 py-2.5 bg-[var(--muted)] border-2 border-[var(--border)] rounded-xl text-xs text-[var(--foreground)] font-semibold placeholder-[var(--foreground)]/50 shadow-[2px_2px_0px_0px_var(--border)] focus:outline-none focus:bg-[var(--card)] focus:ring-2 focus:ring-[#00E5FF] min-h-[44px]"
           />
           {searchTerm && (
             <button
@@ -155,15 +161,23 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
 
         {/* Category Pill Filters */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
-          <Filter className="w-3.5 h-3.5 text-[#2D3436]/70 shrink-0 hidden sm:block" />
+          <button
+            type="button"
+            id="filters-button"
+            data-testid="filters-button"
+            className="p-2 rounded-xl bg-[var(--muted)] border-2 border-[var(--border)] text-[var(--foreground)] flex items-center justify-center shrink-0"
+            title="Filters"
+          >
+            <Filter className="w-3.5 h-3.5" />
+          </button>
           {categories.map(cat => (
             <button
               key={cat}
               onClick={() => setCategoryFilter(cat)}
-              className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider border-2 border-[#2D3436] transition shrink-0 ${
+              className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wider border-2 border-[var(--border)] transition shrink-0 ${
                 categoryFilter === cat
-                  ? 'bg-[#FF6B6B] text-white shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]'
-                  : 'bg-white text-[#2D3436] hover:bg-[#FFFBF0] shadow-[1px_1px_0px_0px_rgba(45,52,54,1)]'
+                  ? 'bg-[#FF6B6B] text-white shadow-[2px_2px_0px_0px_var(--border)]'
+                  : 'bg-[var(--card)] text-[var(--foreground)] hover:bg-[var(--muted)] shadow-[1px_1px_0px_0px_var(--border)]'
               }`}
             >
               {cat}
@@ -173,7 +187,7 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
       </div>
 
       {/* Product List Header Info */}
-      <div className="flex items-center justify-between text-xs text-[#2D3436] font-black bg-[#FFFBF0] px-4 py-2.5 rounded-xl border-2 border-[#2D3436]">
+      <div className="flex items-center justify-between text-xs text-[var(--foreground)] font-black bg-[var(--muted)] px-4 py-2.5 rounded-xl border-2 border-[var(--border)]">
         <span>
           Products listed on store ({filteredProducts.length})
         </span>
@@ -190,25 +204,26 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
         )}
       </div>
 
-      {/* Product List Content: 100% Reliable HTML/Flex Layout */}
+      {/* Product List Content */}
       {filteredProducts.length === 0 ? (
-        <div className="text-center py-12 px-4 border-2 border-dashed border-[#2D3436]/30 rounded-2xl bg-[#FFFBF0]/60">
-          <div className="w-12 h-12 rounded-2xl bg-[#FFE66D] border-2 border-[#2D3436] flex items-center justify-center mx-auto mb-3 shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] text-xl">
+        <div className="text-center py-12 px-4 border-2 border-dashed border-[var(--border)]/30 rounded-2xl bg-[var(--muted)]/50">
+          <div className="w-12 h-12 rounded-2xl bg-[#FFE600] border-2 border-[#111111] flex items-center justify-center mx-auto mb-3 shadow-[2px_2px_0px_0px_#111111] text-xl">
             🦝
           </div>
-          <p className="font-black text-[#2D3436] text-sm">No products found</p>
-          <p className="text-xs text-[#2D3436]/70 mt-1">
+          <p className="font-black text-[var(--foreground)] text-sm">No products found</p>
+          <p className="text-xs text-[var(--muted-text)] mt-1">
             Try adjusting your search query or add a new Amazon product above.
           </p>
         </div>
       ) : layoutMode === 'grid' ? (
         /* ============ GRID CARDS VIEW ============ */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+        <div data-testid="owner-product-grid" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {filteredProducts.map(p => (
             <div
               key={p.id}
               id={`manage-card-${p.id}`}
-              className="p-4 bg-[#FFFBF0] border-3 border-[#2D3436] rounded-2xl shadow-[4px_4px_0px_0px_rgba(45,52,54,1)] flex flex-col justify-between space-y-3"
+              data-testid={`owner-product-${p.id}`}
+              className="p-4 bg-[var(--muted)] border-2 border-[var(--border)] rounded-2xl shadow-[4px_4px_0px_0px_var(--border)] flex flex-col justify-between space-y-3"
             >
               <div className="space-y-3">
                 <div className="flex items-start gap-3">
@@ -216,56 +231,57 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
                     src={p.imageUrl}
                     alt={p.title}
                     referrerPolicy="no-referrer"
-                    className="w-20 h-20 rounded-xl object-cover border-2 border-[#2D3436] bg-white shrink-0 shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]"
+                    className="w-20 h-20 rounded-xl object-cover border-2 border-[var(--border)] bg-[var(--card)] shrink-0 shadow-[2px_2px_0px_0px_var(--border)]"
                     onError={e => {
                       (e.target as HTMLImageElement).src =
                         'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=800&auto=format&fit=crop&q=80';
                     }}
                   />
                   <div className="flex-1 min-w-0">
-                    <span className="inline-block px-2 py-0.5 rounded-md text-[9px] font-black uppercase border border-[#2D3436] bg-[#FFE66D] text-[#2D3436] mb-1">
+                    <span className="inline-block px-2 py-0.5 rounded-md text-[9px] font-black uppercase border border-[#111111] bg-[#FFE600] text-[#111111] mb-1">
                       {p.category}
                     </span>
-                    <h4 className="font-black text-[#2D3436] text-sm leading-snug line-clamp-2">
+                    <h4 className="font-black text-[var(--foreground)] text-sm leading-snug line-clamp-2">
                       {p.title}
                     </h4>
                   </div>
                 </div>
 
-                <p className="text-xs text-[#2D3436]/75 line-clamp-2 font-medium">
+                <p className="text-xs text-[var(--muted-text)] line-clamp-2 font-medium">
                   {p.description}
                 </p>
 
                 {/* Direct Link Info Box */}
-                <div className="p-2.5 bg-white rounded-xl border border-[#2D3436] text-[11px] space-y-1">
-                  <div className="flex items-center justify-between text-[#2D3436]">
-                    <span className="font-bold text-[10px] uppercase text-[#2D3436]/60">
+                <div className="p-2.5 bg-[var(--card)] rounded-xl border border-[var(--border)] text-[11px] space-y-1">
+                  <div className="flex items-center justify-between text-[var(--foreground)]">
+                    <span className="font-bold text-[10px] uppercase text-[var(--muted-text)]">
                       Amazon Link
                     </span>
                     <a
                       href={`/api/redirect/${p.id}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[#FF6B6B] hover:text-[#2D3436] font-black inline-flex items-center gap-0.5 text-[10px]"
+                      className="text-[#FF6B6B] hover:text-[var(--foreground)] font-black inline-flex items-center gap-0.5 text-[10px]"
                     >
                       Test <ArrowUpRight className="w-3 h-3" />
                     </a>
                   </div>
-                  <div className="font-mono text-[10px] text-[#2D3436] truncate" title={p.affiliateUrl}>
+                  <div className="font-mono text-[10px] text-[var(--foreground)] truncate" title={p.affiliateUrl}>
                     {p.affiliateUrl}
                   </div>
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center gap-2 pt-1 border-t border-[#2D3436]/10">
+              <div className="flex items-center gap-2 pt-1 border-t border-[var(--border)]/10">
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.95 }}
                   type="button"
                   id={`edit-grid-btn-${p.id}`}
+                  data-testid={`edit-product-${p.id}`}
                   onClick={() => onEditProduct(p)}
-                  className="flex-1 min-h-[42px] flex items-center justify-center gap-1.5 bg-[#FFE66D] hover:bg-[#FFD93D] text-[#2D3436] font-black text-xs uppercase rounded-xl border-2 border-[#2D3436] shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] transition"
+                  className="flex-1 min-h-[42px] flex items-center justify-center gap-1.5 bg-[#FFE600] hover:bg-[#FFD93D] text-[#111111] font-black text-xs uppercase rounded-xl border-2 border-[#111111] shadow-[2px_2px_0px_0px_#111111] transition"
                 >
                   <Edit2 className="w-3.5 h-3.5" />
                   <span>Edit</span>
@@ -276,12 +292,13 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
                   whileTap={{ scale: 0.95 }}
                   type="button"
                   id={`delete-grid-btn-${p.id}`}
+                  data-testid={`delete-product-${p.id}`}
                   onClick={() => {
                     if (confirm(`Remove "${p.title}" from Raccoon Hub?`)) {
                       onDeleteProduct(p);
                     }
                   }}
-                  className="flex-1 min-h-[42px] flex items-center justify-center gap-1.5 bg-[#FF6B6B] hover:bg-[#ff5252] text-white font-black text-xs uppercase rounded-xl border-2 border-[#2D3436] shadow-[2px_2px_0px_0px_rgba(45,52,54,1)] transition"
+                  className="flex-1 min-h-[42px] flex items-center justify-center gap-1.5 bg-[#FF6B6B] hover:bg-[#ff5252] text-white font-black text-xs uppercase rounded-xl border-2 border-[#111111] shadow-[2px_2px_0px_0px_#111111] transition"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Remove</span>
@@ -291,13 +308,14 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
           ))}
         </div>
       ) : (
-        /* ============ DETAILED LIST VIEW (DEFAULT FOR DESKTOP & MOBILE) ============ */
-        <div className="space-y-4">
+        /* ============ DETAILED LIST VIEW ============ */
+        <div data-testid="owner-product-grid" className="space-y-4">
           {filteredProducts.map(p => (
             <div
               key={p.id}
               id={`manage-item-${p.id}`}
-              className="p-4 sm:p-5 bg-[#FFFBF0] border-3 border-[#2D3436] rounded-2xl shadow-[4px_4px_0px_0px_rgba(45,52,54,1)] hover:shadow-[6px_6px_0px_0px_rgba(45,52,54,1)] transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
+              data-testid={`owner-product-${p.id}`}
+              className="p-4 sm:p-5 bg-[var(--muted)] border-2 border-[var(--border)] rounded-2xl shadow-[4px_4px_0px_0px_var(--border)] flex flex-col md:flex-row md:items-center justify-between gap-4"
             >
               {/* Product Info & Image */}
               <div className="flex items-start gap-3.5 sm:gap-4 flex-1 min-w-0">
@@ -306,7 +324,7 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
                     src={p.imageUrl}
                     alt={p.title}
                     referrerPolicy="no-referrer"
-                    className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover border-2 border-[#2D3436] bg-white shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]"
+                    className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover border-2 border-[var(--border)] bg-[var(--card)] shadow-[2px_2px_0px_0px_var(--border)]"
                     onError={e => {
                       (e.target as HTMLImageElement).src =
                         'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=800&auto=format&fit=crop&q=80';
@@ -316,10 +334,10 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
 
                 <div className="flex-1 min-w-0 space-y-1.5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase border border-[#2D3436] bg-[#FFE66D] text-[#2D3436]">
+                    <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase border border-[#111111] bg-[#FFE600] text-[#111111]">
                       {p.category}
                     </span>
-                    <span className="text-[10px] font-mono font-bold text-[#2D3436]/60">
+                    <span className="text-[10px] font-mono font-bold text-[var(--muted-text)]">
                       ID: {p.id}
                     </span>
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-500 text-[10px] font-black uppercase">
@@ -328,30 +346,32 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
                     </span>
                   </div>
 
-                  <h4 className="font-black text-[#2D3436] text-sm sm:text-base leading-snug line-clamp-1">
+                  <h4 className="font-black text-[var(--foreground)] text-sm sm:text-base leading-snug line-clamp-1">
                     {p.title}
                   </h4>
 
-                  <p className="text-xs text-[#2D3436]/75 line-clamp-2 font-medium">
+                  <p className="text-xs text-[var(--muted-text)] line-clamp-2 font-medium">
                     {p.description}
                   </p>
 
-                  {/* Amazon Affiliate Link Box with 1-click test & copy */}
+                  {/* Amazon Affiliate Link Box */}
                   <div className="pt-1 flex flex-wrap items-center gap-2 text-xs">
-                    <div className="flex items-center gap-2 bg-white px-3 py-1 rounded-xl border border-[#2D3436] text-[11px] max-w-full sm:max-w-md">
-                      <span className="font-bold text-[#2D3436]/60 shrink-0">
+                    <div className="flex items-center gap-2 bg-[var(--card)] px-3 py-1 rounded-xl border border-[var(--border)] text-[11px] max-w-full sm:max-w-md">
+                      <span className="font-bold text-[var(--muted-text)] shrink-0">
                         Link:
                       </span>
                       <span
-                        className="font-mono text-[#2D3436] truncate max-w-[180px] sm:max-w-[240px]"
+                        className="font-mono text-[var(--foreground)] truncate max-w-[180px] sm:max-w-[240px]"
                         title={p.affiliateUrl}
                       >
                         {p.affiliateUrl}
                       </span>
                       <button
                         type="button"
+                        id={`copy-product-${p.id}`}
+                        data-testid={`copy-product-${p.id}`}
                         onClick={() => handleCopyLink(p.id, p.affiliateUrl)}
-                        className="text-[#FF6B6B] hover:text-[#2D3436] font-black inline-flex items-center gap-1 shrink-0 ml-1"
+                        className="text-[#FF6B6B] hover:text-[var(--foreground)] font-black inline-flex items-center gap-1 shrink-0 ml-1"
                       >
                         {copiedId === p.id ? (
                           <>
@@ -371,7 +391,7 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
                       href={`/api/redirect/${p.id}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs font-black text-[#2D3436] hover:text-[#FF6B6B] inline-flex items-center gap-1 underline underline-offset-2 shrink-0"
+                      className="text-xs font-black text-[var(--foreground)] hover:text-[#FF6B6B] inline-flex items-center gap-1 underline underline-offset-2 shrink-0"
                     >
                       <span>Test Link</span>
                       <ArrowUpRight className="w-3.5 h-3.5" />
@@ -381,15 +401,15 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
               </div>
 
               {/* Action Buttons: Edit & Remove */}
-              <div className="flex sm:flex-row md:flex-col lg:flex-row items-center gap-2.5 shrink-0 pt-3 md:pt-0 border-t-2 md:border-t-0 border-[#2D3436]/10">
+              <div className="flex sm:flex-row md:flex-col lg:flex-row items-center gap-2.5 shrink-0 pt-3 md:pt-0 border-t-2 md:border-t-0 border-[var(--border)]/10">
                 <motion.button
                   whileHover={{ scale: 1.04 }}
                   whileTap={{ scale: 0.96 }}
                   type="button"
                   id={`edit-product-${p.id}`}
+                  data-testid={`edit-product-${p.id}`}
                   onClick={() => onEditProduct(p)}
-                  className="flex-1 md:flex-initial min-h-[44px] px-4 sm:px-5 py-2.5 bg-[#FFE66D] hover:bg-[#FFD93D] text-[#2D3436] font-black text-xs sm:text-sm uppercase tracking-wider rounded-xl border-2 border-[#2D3436] shadow-[3px_3px_0px_0px_rgba(45,52,54,1)] flex items-center justify-center gap-1.5 transition"
-                  title="Edit product name, image, description, or direct Amazon link"
+                  className="flex-1 md:flex-initial min-h-[44px] px-4 sm:px-5 py-2.5 bg-[#FFE600] hover:bg-[#FFD93D] text-[#111111] font-black text-xs sm:text-sm uppercase tracking-wider rounded-xl border-2 border-[#111111] shadow-[3px_3px_0px_0px_#111111] flex items-center justify-center gap-1.5 transition"
                 >
                   <Edit2 className="w-4 h-4 stroke-[2.5]" />
                   <span>Edit Product</span>
@@ -400,13 +420,13 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
                   whileTap={{ scale: 0.96 }}
                   type="button"
                   id={`delete-product-${p.id}`}
+                  data-testid={`delete-product-${p.id}`}
                   onClick={() => {
                     if (confirm(`Are you sure you want to remove "${p.title}" from the storefront?`)) {
                       onDeleteProduct(p);
                     }
                   }}
-                  className="flex-1 md:flex-initial min-h-[44px] px-4 sm:px-5 py-2.5 bg-[#FF6B6B] hover:bg-[#ff5252] text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-xl border-2 border-[#2D3436] shadow-[3px_3px_0px_0px_rgba(45,52,54,1)] flex items-center justify-center gap-1.5 transition"
-                  title="Remove product from storefront"
+                  className="flex-1 md:flex-initial min-h-[44px] px-4 sm:px-5 py-2.5 bg-[#FF6B6B] hover:bg-[#ff5252] text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-xl border-2 border-[#111111] shadow-[3px_3px_0px_0px_#111111] flex items-center justify-center gap-1.5 transition"
                 >
                   <Trash2 className="w-4 h-4 stroke-[2.5]" />
                   <span>Remove</span>
@@ -419,4 +439,5 @@ export const OwnerProductManager: React.FC<OwnerProductManagerProps> = ({
     </div>
   );
 };
+
 

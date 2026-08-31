@@ -11,6 +11,8 @@ import {
   Tablet,
   ExternalLink,
   Search,
+  Flame,
+  Calendar,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -46,14 +48,15 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'products' | 'clicks'>('overview');
   const [logFilter, setLogFilter] = useState('');
 
+
   if (isLoading || !analytics) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-16 text-center">
-        <div className="inline-flex items-center justify-center p-4 bg-[#FFE66D] border-2 border-[#2D3436] rounded-2xl mb-4 shadow-[3px_3px_0px_0px_rgba(45,52,54,1)]">
-          <RefreshCw className="w-6 h-6 text-[#2D3436] animate-spin" />
+        <div className="inline-flex items-center justify-center p-4 bg-[#FFE600] border-2 border-[#111111] rounded-2xl mb-4 shadow-[3px_3px_0px_0px_#111111]">
+          <RefreshCw className="w-6 h-6 text-[#111111] animate-spin" />
         </div>
-        <h2 className="text-xl font-black text-[#2D3436]">Loading tracking analytics...</h2>
-        <p className="text-sm font-bold text-[#2D3436]/70 mt-1">Gathering outbound click telemetry</p>
+        <h2 className="text-xl font-display font-extrabold text-[var(--foreground)]">Loading tracking analytics...</h2>
+        <p className="text-sm font-bold text-[var(--muted-text)] mt-1">Gathering outbound click telemetry</p>
       </div>
     );
   }
@@ -93,22 +96,22 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
   });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-in fade-in duration-300">
+    <div data-testid="analytics-dashboard" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 space-y-6 animate-in fade-in duration-300 text-[var(--foreground)]">
       {/* Header section */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b-4 border-[#2D3436] pb-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b-2 border-[var(--border)]/20 pb-5">
         <div>
           <div className="flex items-center gap-2.5">
-            <span className="px-2.5 py-0.5 rounded-md bg-[#FF6B6B] text-white border-2 border-[#2D3436] text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
+            <span className="px-2.5 py-0.5 rounded-md bg-[#FF5722] text-white border-2 border-[#111111] text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0px_0px_#111111]">
               Affiliate Tracking Engine
             </span>
-            <span className="text-xs text-[#2D3436] font-mono font-bold">
+            <span className="text-xs text-[var(--muted-text)] font-mono font-bold">
               Live telemetry
             </span>
           </div>
-          <h1 className="text-2xl sm:text-4xl font-black text-[#2D3436] mt-2">
+          <h1 className="text-2xl sm:text-3xl font-display font-extrabold text-[var(--foreground)] mt-2">
             Click Stream & Telemetry
           </h1>
-          <p className="text-sm text-[#2D3436]/80 font-bold mt-1">
+          <p className="text-sm text-[var(--muted-text)] font-bold mt-1">
             Real-time outbound click tracking and visitor engagement across all curated Amazon affiliate links.
           </p>
         </div>
@@ -116,8 +119,9 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
         <div className="flex items-center gap-2.5">
           <button
             id="analytics-refresh-btn"
+            data-testid="refresh-analytics-button"
             onClick={onRefresh}
-            className="flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-[#FFE66D] text-[#2D3436] rounded-xl text-xs font-black uppercase border-2 border-[#2D3436] shadow-[3px_3px_0px_0px_rgba(45,52,54,1)] active:translate-y-0.5 transition"
+            className="flex items-center gap-1.5 px-4 py-2 bg-[var(--card)] hover:bg-[var(--muted)] text-[var(--foreground)] rounded-xl text-xs font-black uppercase border-2 border-[var(--border)] shadow-[3px_3px_0px_0px_var(--border)] active:translate-y-0.5 transition"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span>Refresh</span>
@@ -125,8 +129,9 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
 
           <button
             id="analytics-export-btn"
+            data-testid="export-csv-button"
             onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-4 py-2 bg-[#4ECDC4] hover:bg-[#3dbdb5] text-[#2D3436] rounded-xl text-xs font-black uppercase border-2 border-[#2D3436] shadow-[3px_3px_0px_0px_rgba(45,52,54,1)] active:translate-y-0.5 transition"
+            className="flex items-center gap-1.5 px-4 py-2 bg-[#4ECDC4] hover:bg-[#3dbdb5] text-[#111111] rounded-xl text-xs font-black uppercase border-2 border-[#111111] shadow-[3px_3px_0px_0px_#111111] active:translate-y-0.5 transition"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export CSV</span>
@@ -134,40 +139,65 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
         </div>
       </div>
 
-      {/* KPI Cards: Only Total Clicks and Unique Clickers */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl">
-        {/* Total Clicks */}
-        <div className="bg-white p-5 sm:p-6 rounded-[1.5rem] border-4 border-[#2D3436] shadow-[4px_4px_0px_0px_rgba(45,52,54,1)]">
-          <div className="flex items-center justify-between text-[#2D3436] mb-2">
-            <span className="text-xs sm:text-sm font-black uppercase">Total Clicks</span>
-            <div className="w-9 h-9 rounded-xl bg-[#FF6B6B] border-2 border-[#2D3436] text-white flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
-              <MousePointerClick className="w-4 h-4 stroke-[2.5]" />
-            </div>
+      {/* KPI Cards (metric-card-0 through metric-card-3 with distinct top accent borders: cyan, coral, yellow, mint) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {/* Metric 0: Total Clicks */}
+        <div data-testid="metric-card-0" className="bg-[var(--card)] p-4 sm:p-5 rounded-2xl border-2 border-[var(--border)] border-t-6 border-t-[#00E5FF] shadow-[4px_4px_0px_0px_var(--border)]">
+          <div className="flex items-center justify-between text-[var(--foreground)] mb-1.5">
+            <span className="text-[11px] font-black uppercase">Total Clicks</span>
+            <MousePointerClick className="w-4 h-4 text-[#00E5FF]" />
           </div>
-          <div className="text-3xl sm:text-4xl font-black text-[#2D3436]">
+          <div className="text-2xl sm:text-3xl font-display font-extrabold text-[var(--foreground)]">
             {analytics.totalClicks.toLocaleString()}
           </div>
-          <div className="text-xs text-[#2D3436] font-black mt-1 flex items-center gap-1.5">
-            <TrendingUp className="w-3.5 h-3.5 text-[#FF6B6B]" /> +{analytics.clicksToday} clicks today
+          <div className="text-[10px] text-[var(--muted-text)] font-bold mt-1">
+            Lifetime outbound clicks
           </div>
         </div>
 
-        {/* Unique Clickers */}
-        <div className="bg-white p-5 sm:p-6 rounded-[1.5rem] border-4 border-[#2D3436] shadow-[4px_4px_0px_0px_rgba(45,52,54,1)]">
-          <div className="flex items-center justify-between text-[#2D3436] mb-2">
-            <span className="text-xs sm:text-sm font-black uppercase">Unique Clickers</span>
-            <div className="w-9 h-9 rounded-xl bg-[#4ECDC4] border-2 border-[#2D3436] text-[#2D3436] flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(45,52,54,1)]">
-              <Users className="w-4 h-4 stroke-[2.5]" />
-            </div>
+        {/* Metric 1: Unique Visitors */}
+        <div data-testid="metric-card-1" className="bg-[var(--card)] p-4 sm:p-5 rounded-2xl border-2 border-[var(--border)] border-t-6 border-t-[#FF6B6B] shadow-[4px_4px_0px_0px_var(--border)]">
+          <div className="flex items-center justify-between text-[var(--foreground)] mb-1.5">
+            <span className="text-[11px] font-black uppercase">Unique Clickers</span>
+            <Users className="w-4 h-4 text-[#FF6B6B]" />
           </div>
-          <div className="text-3xl sm:text-4xl font-black text-[#2D3436]">
+          <div className="text-2xl sm:text-3xl font-display font-extrabold text-[var(--foreground)]">
             {analytics.uniqueVisitors.toLocaleString()}
           </div>
-          <div className="text-xs text-[#2D3436]/75 font-bold mt-1">
-            Distinct visitor sessions clicking through
+          <div className="text-[10px] text-[var(--muted-text)] font-bold mt-1">
+            Anonymous visitor hashes
+          </div>
+        </div>
+
+        {/* Metric 2: Clicks Today */}
+        <div data-testid="metric-card-2" className="bg-[var(--card)] p-4 sm:p-5 rounded-2xl border-2 border-[var(--border)] border-t-6 border-t-[#FFE600] shadow-[4px_4px_0px_0px_var(--border)]">
+          <div className="flex items-center justify-between text-[var(--foreground)] mb-1.5">
+            <span className="text-[11px] font-black uppercase">Clicks Today</span>
+            <Flame className="w-4 h-4 text-[#FFE600]" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-display font-extrabold text-[var(--foreground)]">
+            {analytics.clicksToday.toLocaleString()}
+          </div>
+          <div className="text-[10px] text-[var(--muted-text)] font-bold mt-1">
+            Recorded past 24 hrs
+          </div>
+        </div>
+
+        {/* Metric 3: Active Products */}
+        <div data-testid="metric-card-3" className="bg-[var(--card)] p-4 sm:p-5 rounded-2xl border-2 border-[var(--border)] border-t-6 border-t-[#4ECDC4] shadow-[4px_4px_0px_0px_var(--border)]">
+          <div className="flex items-center justify-between text-[var(--foreground)] mb-1.5">
+            <span className="text-[11px] font-black uppercase">Tracked Products</span>
+            <Calendar className="w-4 h-4 text-[#4ECDC4]" />
+          </div>
+          <div className="text-2xl sm:text-3xl font-display font-extrabold text-[var(--foreground)]">
+            {products.length}
+          </div>
+          <div className="text-[10px] text-[var(--muted-text)] font-bold mt-1">
+            Active Amazon items
           </div>
         </div>
       </div>
+
 
       {/* Navigation Sub-Tabs */}
       <div className="flex flex-wrap items-center gap-2 border-b-4 border-[#2D3436] pb-3">

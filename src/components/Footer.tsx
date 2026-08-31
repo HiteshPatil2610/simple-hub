@@ -7,23 +7,23 @@ interface FooterProps {
 
 export const Footer: React.FC<FooterProps> = ({ onGoToAdmin }) => {
   return (
-    <footer className="bg-[#2D3436] text-[#FFFBF0] border-t-4 border-[#2D3436] mt-20">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 pb-10 border-b-2 border-[#FFFBF0]/20">
+    <footer className="bg-[#111111] text-[#F7F3E8] border-t-3 border-[#111111] mt-16">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 pb-8 border-b-2 border-[#F7F3E8]/20">
           {/* Brand Col */}
-          <div className="md:col-span-2 space-y-4">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-[#FFE66D] border-2 border-[#2D3436] flex items-center justify-center text-[#2D3436] font-black text-lg shadow-[2px_2px_0px_0px_rgba(255,251,240,1)]">
+          <div className="md:col-span-2 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-[#FFE600] border-2 border-[#111111] flex items-center justify-center text-[#111111] font-black text-base shadow-[2px_2px_0px_0px_#F7F3E8]">
                 🦝
               </div>
-              <span className="text-2xl font-black tracking-tight text-[#FFFBF0]">
-                Raccoon<span className="text-[#FF6B6B]">Hub</span>
+              <span className="font-display text-xl font-extrabold tracking-tight text-[#F7F3E8]">
+                raccoon<span className="text-[#FF5722]">hub</span>
               </span>
             </div>
-            <p className="text-xs text-[#FFFBF0]/80 font-bold leading-relaxed max-w-md">
-              Hand-picked viral gadgets, aesthetic desk setups, and quirky novelty finds on Amazon. Curated daily for quality, fun, and delightful utility.
+            <p className="text-xs text-[#F7F3E8]/80 font-medium leading-relaxed max-w-md">
+              A lovingly edited corner of the internet for clever objects, useful oddities, and the little upgrades that make everyday life feel more like yours.
             </p>
-            <div className="flex items-center gap-4 text-xs text-[#FFFBF0]/70 font-bold">
+            <div className="flex items-center gap-4 text-xs text-[#F7F3E8]/70 font-bold">
               <span className="flex items-center gap-1.5 text-[#4ECDC4]">
                 <Shield className="w-4 h-4 stroke-[2.5]" /> Direct Amazon Affiliate Redirection
               </span>
@@ -32,41 +32,39 @@ export const Footer: React.FC<FooterProps> = ({ onGoToAdmin }) => {
 
           {/* Categories */}
           <div>
-            <h4 className="text-xs font-black uppercase tracking-wider text-[#FFE66D] mb-3">
+            <h4 className="text-xs font-black uppercase tracking-wider text-[#FFE600] mb-3">
               Categories
             </h4>
-            <ul className="space-y-2 text-xs text-[#FFFBF0]/80 font-bold">
+            <ul className="space-y-2 text-xs text-[#F7F3E8]/80 font-medium">
               <li><span>Tech & Gadgets</span></li>
-              <li><span>Desk & Office Finds</span></li>
-              <li><span>Home & Living Decor</span></li>
-              <li><span>Quirky Novelties</span></li>
-              <li><span>Gifts & Fun Finds</span></li>
+              <li><span>Desk & Office</span></li>
+              <li><span>Home & Living</span></li>
+              <li><span>Quirky Finds</span></li>
+              <li><span>Fun & Novelty</span></li>
             </ul>
           </div>
 
           {/* Affiliate Partner & Owner Access */}
           <div>
-            <h4 className="text-xs font-black uppercase tracking-wider text-[#FFE66D] mb-3">
-              Affiliate Partner
+            <h4 className="text-xs font-black uppercase tracking-wider text-[#FFE600] mb-3">
+              Curator Desk
             </h4>
-            <ul className="space-y-2 text-xs text-[#FFFBF0]/80 font-bold">
+            <ul className="space-y-2 text-xs text-[#F7F3E8]/80 font-medium">
               <li className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#FFE66D] border border-[#2D3436]"></span>
+                <span className="w-2.5 h-2.5 rounded-full bg-[#FFE600] border border-[#111111]"></span>
                 <span>Amazon Associates Program</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#4ECDC4] border border-[#2D3436]"></span>
-                <span>Official Associate Tag: raccoonhub-20</span>
               </li>
               {onGoToAdmin && (
                 <li className="pt-2">
                   <button
                     type="button"
+                    id="footer-owner-link"
+                    data-testid="footer-owner-link"
                     onClick={onGoToAdmin}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#4ECDC4] text-[#2D3436] font-black text-xs uppercase border-2 border-[#2D3436] shadow-[2px_2px_0px_0px_rgba(255,251,240,1)] hover:bg-[#3dbdb5] transition"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#FFE600] text-[#111111] font-black text-xs uppercase border-2 border-[#111111] shadow-[2px_2px_0px_0px_#F7F3E8] hover:bg-[#ffea2e] transition"
                   >
                     <LayoutDashboard className="w-3.5 h-3.5" />
-                    <span>Owner & Records Portal</span>
+                    <span>Owner Hub & Records</span>
                   </button>
                 </li>
               )}
@@ -75,16 +73,17 @@ export const Footer: React.FC<FooterProps> = ({ onGoToAdmin }) => {
         </div>
 
         {/* FTC Disclosure & Copyright */}
-        <div className="pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-[11px] text-[#FFFBF0]/60 font-bold">
+        <div className="pt-6 flex flex-col md:flex-row items-center justify-between gap-4 text-[11px] text-[#F7F3E8]/60 font-medium">
           <div className="max-w-3xl leading-relaxed">
-            <span className="font-black text-[#FFE66D]">Amazon Associate Disclosure:</span> Raccoon Hub is an independent product curation storefront. As an Amazon Associate, we earn from qualifying purchases made through our referral links at no additional cost to you.
+            <span className="font-bold text-[#FFE600]">Amazon Associate Disclosure:</span> As an Amazon Associate, Raccoon Hub earns from qualifying purchases made through outbound links.
           </div>
-          <div className="whitespace-nowrap text-[#FFFBF0]/80 font-black">
-            © {new Date().getFullYear()} Raccoon Hub. All rights reserved.
+          <div className="whitespace-nowrap text-[#F7F3E8]/80 font-mono text-[10px]">
+            Field notes from the hub © {new Date().getFullYear()} Raccoon Hub
           </div>
         </div>
       </div>
     </footer>
   );
 };
+
 
